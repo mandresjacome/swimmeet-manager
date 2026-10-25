@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Competencia</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/competencia.css">
+</head>
+<body>
+    <header id="app-header"></header>
+
+    <main class="app-main">
+        <div class="page-header">
+            <div>
+                <h1>Competencia</h1>
+                <p>Gestiona inscripciones, captura los tiempos serie por serie y corrige resultados.</p>
+            </div>
+        </div>
+
+        <div id="empty-state" class="card" hidden></div>
+
+        <div id="workspace">
+            <div class="tabs" role="tablist" aria-label="Secciones de la competencia">
+                <button type="button" class="tab" role="tab" id="tab-inscripciones" data-tab="inscripciones" aria-controls="panel-inscripciones" aria-selected="true">Inscripciones</button>
+                <button type="button" class="tab" role="tab" id="tab-tiempos" data-tab="tiempos" aria-controls="panel-tiempos" aria-selected="false" tabindex="-1">Tiempos</button>
+                <button type="button" class="tab" role="tab" id="tab-resultados" data-tab="resultados" aria-controls="panel-resultados" aria-selected="false" tabindex="-1">Resultados</button>
+            </div>
+
+            <section class="tab-panel" role="tabpanel" id="panel-inscripciones" aria-labelledby="tab-inscripciones">
+                <div class="stats" id="ins-stats"></div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Inscripciones</h2>
+                        <div class="card-actions">
+                            <button type="button" class="btn" data-action="auto-assign">Asignar carriles automáticamente</button>
+                            <button type="button" class="btn btn-primary" data-action="new-entry">Nueva inscripción</button>
+                        </div>
+                    </div>
+                    <div class="toolbar">
+                        <div class="field">
+                            <label for="ins-category">Categoría</label>
+                            <select id="ins-category"></select>
+                        </div>
+                        <div class="field">
+                            <label for="ins-event">Prueba</label>
+                            <select id="ins-event"></select>
+                        </div>
+                        <div class="field grow">
+                            <label for="ins-search">Buscar</label>
+                            <input type="search" id="ins-search" placeholder="Nombre o club" autocomplete="off">
+                        </div>
+                    </div>
+                    <div id="ins-table"></div>
+                </div>
+            </section>
+
+            <section class="tab-panel" role="tabpanel" id="panel-tiempos" aria-labelledby="tab-tiempos" hidden>
+                <div class="card">
+                    <div class="toolbar">
+                        <div class="field">
+                            <label for="times-category">Categoría</label>
+                            <select id="times-category"></select>
+                        </div>
+                        <div class="field">
+                            <label for="times-event">Prueba</label>
+                            <select id="times-event"></select>
+                        </div>
+                        <div class="field">
+                            <label for="times-heat">Serie</label>
+                            <select id="times-heat"></select>
+                        </div>
+                    </div>
+                    <div id="times-summary" class="card-body"></div>
+                    <div id="times-heat-card"></div>
+                </div>
+            </section>
+
+            <section class="tab-panel" role="tabpanel" id="panel-resultados" aria-labelledby="tab-resultados" hidden>
+                <div class="stats" id="res-stats"></div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Resultados registrados</h2>
+                        <a class="btn" href="resultados.html">Ver vista pública / exportar PDF</a>
+                    </div>
+                    <div class="toolbar">
+                        <div class="field">
+                            <label for="res-category">Categoría</label>
+                            <select id="res-category"></select>
+                        </div>
+                        <div class="field">
+                            <label for="res-event">Prueba</label>
+                            <select id="res-event"></select>
+                        </div>
+                        <div class="field">
+                            <label for="res-status">Estado</label>
+                            <select id="res-status"></select>
+                        </div>
+                        <div class="field grow">
+                            <label for="res-search">Buscar</label>
+                            <input type="search" id="res-search" placeholder="Nombre o club" autocomplete="off">
+                        </div>
+                    </div>
+                    <div id="res-table"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <footer id="app-footer"></footer>
+
+    <script src="js/utils.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/competencia.js"></script>
+</body>
+</html>

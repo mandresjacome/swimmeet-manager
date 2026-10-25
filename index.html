@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="SwimMeet Manager: gestión de competencias de natación — inscripciones, series, tiempos, podios y PDFs.">
+    <title>Inicio</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header id="app-header"></header>
+
+    <main class="app-main">
+        <section id="hero" class="hero"></section>
+        <section id="stats" class="stats" aria-label="Resumen"></section>
+
+        <div class="grid grid-2">
+            <section class="card">
+                <div class="card-header">
+                    <h2>Primeros pasos</h2>
+                    <span id="stepsSummary" class="badge"></span>
+                </div>
+                <ol id="steps" class="steps"></ol>
+            </section>
+
+            <div>
+                <section id="progressCard" class="card">
+                    <div class="card-header"><h2>Avance de la competencia</h2></div>
+                    <div id="progress" class="card-body"></div>
+                </section>
+
+                <section id="demoCard" class="card" hidden>
+                    <div class="card-header"><h2>¿Quieres explorar primero?</h2></div>
+                    <div class="card-body">
+                        <p>Carga un evento de demostración con categorías, participantes ficticios, series y carriles ya asignados. Puedes borrarlo cuando quieras.</p>
+                        <div class="flex gap-8 flex-wrap">
+                            <button type="button" class="btn btn-primary" data-action="demo" data-results="false">Cargar demo</button>
+                            <button type="button" class="btn" data-action="demo" data-results="true">Demo con resultados</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <footer id="app-footer"></footer>
+
+    <script src="js/utils.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/templates.js"></script>
+    <script src="js/demo.js"></script>
+    <script src="js/inicio.js"></script>
+</body>
+</html>

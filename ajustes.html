@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajustes</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header id="app-header"></header>
+
+    <main class="app-main">
+        <div class="page-header">
+            <div>
+                <h1>Ajustes</h1>
+                <p>Configura tu evento, parte de una plantilla y administra tus copias de seguridad.</p>
+            </div>
+        </div>
+
+        <section class="card" id="evento">
+            <div class="card-header"><h2>Datos del evento</h2></div>
+            <form id="eventForm" class="card-body" novalidate>
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="name">Nombre del evento <span class="req">*</span></label>
+                        <input type="text" id="name" name="name" required maxlength="100">
+                    </div>
+                    <div class="field">
+                        <label for="organizer">Organizador</label>
+                        <input type="text" id="organizer" name="organizer" maxlength="100" placeholder="Club, liga o institución">
+                    </div>
+                    <div class="field">
+                        <label for="venue">Sede</label>
+                        <input type="text" id="venue" name="venue" maxlength="100" placeholder="Nombre de la piscina o complejo">
+                    </div>
+                    <div class="field">
+                        <label for="city">Ciudad</label>
+                        <input type="text" id="city" name="city" maxlength="60">
+                    </div>
+                    <div class="field">
+                        <label for="date">Fecha</label>
+                        <input type="date" id="date" name="date">
+                    </div>
+                    <div class="field">
+                        <label for="startTime">Hora de inicio</label>
+                        <input type="time" id="startTime" name="startTime">
+                    </div>
+                    <div class="field">
+                        <label for="lanes">Carriles de la piscina</label>
+                        <input type="number" id="lanes" name="lanes" min="1" max="12" step="1">
+                        <span class="hint">Define cuántos nadadores caben por serie.</span>
+                    </div>
+                    <div class="field">
+                        <label for="poolLength">Longitud de la piscina</label>
+                        <select id="poolLength" name="poolLength">
+                            <option value="25">25 metros</option>
+                            <option value="50">50 metros</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="description">Descripción</label>
+                    <textarea id="description" name="description" rows="3" maxlength="500" placeholder="Una o dos frases sobre el evento"></textarea>
+                </div>
+
+                <h3 class="mt-24">Programa</h3>
+                <div id="scheduleRows"></div>
+                <button type="button" class="btn btn-sm" data-action="add-schedule">Agregar horario</button>
+
+                <h3 class="mt-24">Contactos</h3>
+                <div id="contactRows"></div>
+                <button type="button" class="btn btn-sm" data-action="add-contact">Agregar contacto</button>
+
+                <div class="field mt-24">
+                    <label for="rules">Reglas e información importante</label>
+                    <textarea id="rules" name="rules" rows="5" placeholder="Una regla por línea"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="card" id="plantillas">
+            <div class="card-header"><h2>Plantillas de categorías y pruebas</h2></div>
+            <div class="card-body">
+                <p class="muted">Agrega de una vez las categorías y pruebas típicas. Las que ya existan no se duplican y luego puedes editarlas en Datos.</p>
+                <div id="templates" class="grid grid-auto"></div>
+            </div>
+        </section>
+
+        <section class="card" id="demo">
+            <div class="card-header"><h2>Evento de demostración</h2></div>
+            <div class="card-body">
+                <p>Reemplaza los datos actuales por un evento ficticio completo (categorías, participantes, series y carriles) para explorar la aplicación.</p>
+                <div class="flex gap-8 flex-wrap">
+                    <button type="button" class="btn btn-primary" data-action="demo" data-results="false">Cargar demo</button>
+                    <button type="button" class="btn" data-action="demo" data-results="true">Cargar demo con resultados</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="card" id="respaldo">
+            <div class="card-header"><h2>Copias de seguridad</h2></div>
+            <div class="card-body">
+                <p>Todo se guarda únicamente en este navegador. Exporta una copia para guardarla o para llevarla a otro equipo.</p>
+                <div class="flex gap-8 flex-wrap">
+                    <button type="button" class="btn btn-primary" data-action="export-json">Exportar copia (JSON)</button>
+                    <button type="button" class="btn" data-action="import-json">Importar copia…</button>
+                    <input type="file" id="importFile" accept="application/json,.json" hidden>
+                </div>
+            </div>
+        </section>
+
+        <section class="card" id="drive">
+            <div class="card-header"><h2>Subida de PDFs a Google Drive</h2><span id="driveStatus" class="badge"></span></div>
+            <div class="card-body">
+                <p class="mb-0">Opcional. Los PDFs siempre se descargan en tu equipo; si configuras un Apps Script en <code>js/config.js</code> también se suben a tu Drive. Los pasos están en <code>INSTRUCCIONES_PDF.md</code>.</p>
+            </div>
+        </section>
+
+        <section class="card danger-zone" id="peligro">
+            <div class="card-header"><h2>Zona de peligro</h2></div>
+            <div class="card-body">
+                <p>Estas acciones no se pueden deshacer. Exporta una copia antes de continuar.</p>
+                <div class="flex gap-8 flex-wrap">
+                    <button type="button" class="btn" data-action="clear-results">Borrar solo resultados</button>
+                    <button type="button" class="btn" data-action="clear-data">Borrar datos (conservar evento)</button>
+                    <button type="button" class="btn btn-danger" data-action="reset-all">Restablecer todo</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer id="app-footer"></footer>
+
+    <script src="js/utils.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/templates.js"></script>
+    <script src="js/demo.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/export.js"></script>
+    <script src="js/ajustes.js"></script>
+</body>
+</html>

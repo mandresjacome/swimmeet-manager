@@ -1,0 +1,16 @@
+# Credenciales y respaldos (pueden contener datos sensibles)
+*.json
+!package.json
+*.pem
+*.key
+.env
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

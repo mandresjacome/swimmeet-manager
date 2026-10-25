@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Datos</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header id="app-header"></header>
+
+    <main class="app-main">
+        <div class="page-header">
+            <div>
+                <h1>Datos de la competencia</h1>
+                <p>Categorías, pruebas y participantes. Las inscripciones y los carriles se gestionan en Competencia.</p>
+            </div>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Datos">
+            <button class="tab" role="tab" id="tab-categorias" aria-controls="panel-categorias" data-tab="categorias">Categorías</button>
+            <button class="tab" role="tab" id="tab-pruebas" aria-controls="panel-pruebas" data-tab="pruebas">Pruebas</button>
+            <button class="tab" role="tab" id="tab-participantes" aria-controls="panel-participantes" data-tab="participantes">Participantes</button>
+        </div>
+
+        <section class="tab-panel" role="tabpanel" id="panel-categorias" aria-labelledby="tab-categorias">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Categorías</h2>
+                    <div class="card-actions">
+                        <a class="btn btn-sm" href="ajustes.html#plantillas">Usar plantilla</a>
+                        <button type="button" class="btn btn-primary btn-sm" data-action="new-category">Nueva categoría</button>
+                    </div>
+                </div>
+                <div id="categoriesTable"></div>
+            </div>
+        </section>
+
+        <section class="tab-panel" role="tabpanel" id="panel-pruebas" aria-labelledby="tab-pruebas" hidden>
+            <div class="card">
+                <div class="card-header">
+                    <h2>Pruebas</h2>
+                    <div class="card-actions">
+                        <button type="button" class="btn btn-primary btn-sm" data-action="new-event">Nueva prueba</button>
+                    </div>
+                </div>
+                <div class="toolbar">
+                    <div class="field grow">
+                        <label for="eventSearch">Buscar</label>
+                        <input type="search" id="eventSearch" placeholder="Nombre de la prueba">
+                    </div>
+                    <div class="field">
+                        <label for="eventCategory">Categoría</label>
+                        <select id="eventCategory"></select>
+                    </div>
+                </div>
+                <div id="eventsTable"></div>
+            </div>
+        </section>
+
+        <section class="tab-panel" role="tabpanel" id="panel-participantes" aria-labelledby="tab-participantes" hidden>
+            <div class="card">
+                <div class="card-header">
+                    <h2>Participantes</h2>
+                    <div class="card-actions">
+                        <button type="button" class="btn btn-sm" data-action="import-csv">Importar CSV</button>
+                        <button type="button" class="btn btn-primary btn-sm" data-action="new-participant">Nuevo participante</button>
+                    </div>
+                </div>
+                <div class="toolbar">
+                    <div class="field grow">
+                        <label for="participantSearch">Buscar</label>
+                        <input type="search" id="participantSearch" placeholder="Nombre o club">
+                    </div>
+                    <div class="field">
+                        <label for="participantClub">Club</label>
+                        <select id="participantClub"></select>
+                    </div>
+                </div>
+                <div id="participantsTable"></div>
+            </div>
+        </section>
+    </main>
+
+    <footer id="app-footer"></footer>
+
+    <script src="js/utils.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/csv.js"></script>
+    <script src="js/datos.js"></script>
+</body>
+</html>

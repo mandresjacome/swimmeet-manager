@@ -1,0 +1,20 @@
+/* Estilos exclusivos de la página Competencia */
+
+.row-error {
+    margin-top: 4px;
+    font-size: .78rem;
+    color: var(--danger);
+}
+
+.times-table .lane-input {
+    width: 100%;
+    min-width: 150px;
+    max-width: 200px;
+}
+
+.participant-picker select { min-height: 150px; }
+
+/* Evita la barra de scroll vertical que aparece por el margen negativo de .tab */
+.tabs { overflow-y: hidden; }
+
+.empty-state .page-actions { justify-content: center; }

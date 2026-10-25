@@ -1,0 +1,25 @@
+/* Página de información del evento */
+
+.pre-line { white-space: pre-line; }
+
+.timeline { list-style: none; margin: 0; padding: 0; }
+.timeline li { display: flex; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
+.timeline li:last-child { border-bottom: 0; }
+.timeline-time { flex: none; min-width: 64px; font-family: var(--mono); font-weight: 700; color: var(--brand-700); }
+
+.rules-list { margin: 0; padding: 16px 20px 16px 40px; }
+.rules-list li { margin-bottom: 8px; }
+.rules-list li:last-child { margin-bottom: 0; }
+
+.contact-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; padding: 20px; }
+.contact-card { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; }
+.contact-card strong { display: block; }
+.contact-card .contact-role { color: var(--muted); font-size: .85rem; margin-bottom: 8px; }
+.contact-card a { display: block; word-break: break-word; }
+
+.category-block { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.category-block:last-child { border-bottom: 0; }
+.category-block-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.category-block h3 { margin: 0; }
+a.badge { text-decoration: none; }
+a.badge:hover { background: var(--brand-600); color: #fff; }

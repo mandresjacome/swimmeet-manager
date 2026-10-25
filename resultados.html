@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resultados</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header id="app-header"></header>
+
+    <main class="app-main">
+        <div class="page-header">
+            <div>
+                <h1>Resultados</h1>
+                <p id="results-subtitle"></p>
+            </div>
+            <div class="page-actions">
+                <button type="button" class="btn" data-action="refresh">Actualizar</button>
+                <button type="button" class="btn" data-action="export-csv">Exportar CSV</button>
+                <button type="button" class="btn btn-primary" data-action="export-pdf">Descargar PDF</button>
+            </div>
+        </div>
+
+        <div id="results-stats" class="stats" aria-live="polite"></div>
+
+        <section class="card" aria-label="Filtros">
+            <div class="toolbar">
+                <div class="field">
+                    <label for="filter-category">Categoría</label>
+                    <select id="filter-category"></select>
+                </div>
+                <div class="field">
+                    <label for="filter-event">Prueba</label>
+                    <select id="filter-event"></select>
+                </div>
+                <div class="field">
+                    <label for="filter-status">Estado</label>
+                    <select id="filter-status">
+                        <option value="">Todos</option>
+                        <option value="OK">OK · Tiempo válido</option>
+                        <option value="DQ">DQ · Descalificado</option>
+                        <option value="DNS">DNS · No se presentó</option>
+                        <option value="DNF">DNF · No terminó</option>
+                    </select>
+                </div>
+                <div class="field grow">
+                    <label for="filter-query">Participante o club</label>
+                    <input type="search" id="filter-query" placeholder="Buscar por nombre o club" autocomplete="off">
+                </div>
+            </div>
+        </section>
+
+        <div id="results-content"></div>
+    </main>
+
+    <footer id="app-footer"></footer>
+
+    <script src="js/utils.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/vendor/jspdf.umd.min.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/export.js"></script>
+    <script src="js/pdf.js"></script>
+    <script src="js/resultados.js"></script>
+</body>
+</html>
