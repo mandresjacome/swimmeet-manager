@@ -79,3 +79,7 @@ Es un sitio estático: en GitHub, **Settings → Pages → Deploy from a branch 
 - Los datos viven solo en el navegador del equipo que los captura; para cambiar de equipo, exporta e importa una copia desde Ajustes.
 - No hay cuentas, sincronización multiusuario ni servidor: está pensada para un operador por evento.
 - La única comunicación externa es la subida opcional de PDFs a tu propio Apps Script.
+
+## Licencia
+
+[MIT](LICENSE) © 2026 Mario Andrés Jácome Mantilla. jsPDF (`js/vendor/`) se distribuye bajo su propia licencia MIT.

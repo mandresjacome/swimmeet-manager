@@ -2,6 +2,7 @@
   "name": "swimmeet-manager",
   "version": "2.0.0",
   "private": true,
+  "license": "MIT",
   "engines": { "node": ">=22" },
   "description": "SwimMeet Manager: gestión de competencias de natación (frontend estático con localStorage)",
   "scripts": {
