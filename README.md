@@ -1,18 +1,20 @@
 # SwimMeet Manager
 
-Aplicación web para organizar **cualquier competencia de natación**: define tu evento, crea categorías y pruebas, inscribe participantes, reparte series y carriles, registra tiempos el día de la competencia y publica podios, tablas y PDFs.
-
-Es una app estática (HTML, CSS y JavaScript puro, sin build ni backend): se abre con un servidor estático o desde GitHub Pages y guarda todo en el `localStorage` del navegador.
+Aplicación web para organizar competencias de natación, desde la configuración del evento hasta el registro de tiempos y la entrega de resultados. Usa HTML, CSS y JavaScript puro, se ejecuta desde un servidor estático y guarda los datos en el `localStorage` del navegador.
 
 ![Inicio](docs/screenshots/inicio.png)
 
-> Todos los datos de ejemplo (participantes, clubes, contactos) son **ficticios** y se generan con el botón *Cargar demo*.
+Los participantes, clubes y contactos de la demo y de las capturas son ficticios.
 
-## Probarla en 30 segundos
+## Ejecutar en local
 
-1. Sirve la carpeta (por ejemplo `python -m http.server 8000`) y abre `http://localhost:8000`.
-2. En **Inicio** pulsa **Demo con resultados**.
-3. Explora Datos, Competencia, Resultados y Evento. Cuando quieras empezar de cero, **Ajustes → Zona de peligro → Restablecer todo**.
+Desde la carpeta del repositorio, inicia el servidor de Python 3.
+
+```bash
+python -m http.server 8000 --bind 127.0.0.1
+```
+
+Abre **http://127.0.0.1:8000** y pulsa **Demo con resultados** en Inicio para explorar un evento ficticio. Desde Ajustes puedes restablecer los datos de la demo. La aplicación se sirve directamente desde sus archivos. Node.js se usa para las comprobaciones de desarrollo.
 
 ## Flujo de trabajo
 
@@ -29,15 +31,22 @@ Es una app estática (HTML, CSS y JavaScript puro, sin build ni backend): se abr
 |---|---|---|
 | ![Datos](docs/screenshots/datos.png) | ![Tiempos](docs/screenshots/competencia.png) | ![Resultados](docs/screenshots/resultados.png) |
 
-## Características
+<img src="docs/screenshots/resultados-movil.png" alt="Podios de la Copa Demo SwimMeet en la vista móvil de Resultados" width="330">
 
-- **Genérica**: nada está atado a un evento; nombre, sede, fecha, carriles (1–12) y piscina (25/50 m) se configuran.
-- **Reglas de dominio**: un nadador no puede inscribirse dos veces en la misma prueba, un carril no puede repetirse en una serie, los tiempos se validan y las posiciones se calculan con empates (solo `OK` puntúa).
-- **Integridad**: eliminar una categoría, prueba o participante elimina en cascada sus inscripciones y resultados (la interfaz avisa cuántos).
-- **Copias de seguridad** en JSON, con validación estricta al importar y escritura atómica (si falla, se restaura el estado anterior).
-- **PDFs** con jsPDF servido localmente (funciona sin conexión) y subida opcional a Google Drive ([guía](INSTRUCCIONES_PDF.md)).
-- **Seguro por diseño**: todo el HTML dinámico pasa por una plantilla que escapa los valores, sin `innerHTML` con datos sin escapar; los CSV exportados neutralizan inyección de fórmulas.
-- **Accesible y responsive**: navegación por teclado, roles ARIA en pestañas y diálogos, tablas con desplazamiento y menú móvil.
+## Archivos y reglas de competencia
+
+- La piscina puede ser de 25 o 50 m, con 1 a 12 carriles. Antes de reducir el número de carriles, reasigna o libera los que queden fuera del nuevo máximo.
+- Una inscripción vincula a un participante con una prueba y puede quedar pendiente de serie y carril. Los resultados `OK` con tiempos positivos se clasifican por prueba y los empates comparten posición. Al eliminar categorías, pruebas o participantes se eliminan sus registros dependientes.
+- La importación de participantes admite coma, punto y coma o tabulador. El CSV de resultados refleja los filtros activos y protege los campos de texto con prefijos de fórmula. La interpretación del CSV puede variar según la hoja de cálculo que lo abra o vuelva a guardar.
+- El PDF se genera localmente con el podio completo, incluidos los empates que ocupan varias páginas. Se puede filtrar por categoría o prueba. Google Drive es opcional y viene desactivado. [Guía de PDF y Google Drive](INSTRUCCIONES_PDF.md)
+
+## Respaldos y privacidad
+
+- `localStorage` está ligado al protocolo, al host, al puerto y al perfil del navegador. Cambiar de puerto o perfil, borrar los datos del sitio o perder acceso al navegador puede dejar los datos inaccesibles. La aplicación está pensada para un operador por evento y una pestaña de edición.
+- En **Ajustes** puedes exportar una copia JSON e importarla en otro equipo. La restauración reemplaza las secciones que incluye el archivo y valida cómo quedarían todas las relaciones y asignaciones antes de guardarlas. Si falla una escritura, la aplicación intenta revertir los cambios e informa si el navegador también impide la reversión.
+- Los respaldos incluyen los contadores de identificadores. Al abrir datos de una edición anterior, cada contador empieza en el mayor identificador disponible en su colección.
+- Si se detectan datos dañados, se pausa la edición y se conservan los valores originales. **Exportar copia** genera un archivo de recuperación con los valores que se pudieron leer. Ese archivo requiere revisión manual. Para reanudar la edición, importa un respaldo completo válido o confirma el restablecimiento desde Ajustes.
+- Los archivos exportados pueden incluir nombres, clubes, resultados y, en el respaldo JSON, contactos del evento. Guárdalos y compártelos con el alcance adecuado.
 
 ## Estructura
 
@@ -55,31 +64,26 @@ Es una app estática (HTML, CSS y JavaScript puro, sin build ni backend): se abr
 │   ├── pdf.js          PDF de resultados y subida opcional a Drive
 │   ├── config.js       Configuración local (URL del Apps Script)
 │   └── <página>.js     Lógica de cada página
-├── js/vendor/          jsPDF 2.5.1 (MIT)
+├── js/vendor/          jsPDF 4.2.1 (MIT)
 ├── tests/              Pruebas automáticas (node:test)
 └── docs/screenshots/
 ```
 
-## Pruebas
+## Calidad automatizada
 
-Requiere Node.js 22+ y no tiene dependencias:
+Usa **Node.js 24**.
 
 ```bash
+npm ci
+npm run lint
 npm test
+npm audit
 ```
 
-Cubren la capa de datos (reglas, cascadas, ranking, importación/exportación atómica), utilidades (escapado, tiempos), plantillas, demo y el lector de CSV. Se ejecutan en GitHub Actions en cada push.
+Las pruebas cubren el dominio, el almacenamiento, los respaldos, CSV, PDF, utilidades, plantillas y la demo. GitHub Actions instala las dependencias de desarrollo y ejecuta ESLint y las pruebas en Linux con Node.js 24 en los pushes a `main` y las solicitudes de cambios. ESLint excluye la biblioteca de terceros.
 
-## Despliegue
+## Licencia y autor
 
-Es un sitio estático: en GitHub, **Settings → Pages → Deploy from a branch → `main` / root**.
+Mario Andrés Jácome Mantilla · [@mandresjacome](https://github.com/mandresjacome) · [Licencia MIT](LICENSE)
 
-## Privacidad y límites
-
-- Los datos viven solo en el navegador del equipo que los captura; para cambiar de equipo, exporta e importa una copia desde Ajustes.
-- No hay cuentas, sincronización multiusuario ni servidor: está pensada para un operador por evento.
-- La única comunicación externa es la subida opcional de PDFs a tu propio Apps Script.
-
-## Licencia
-
-[MIT](LICENSE) © 2026 Mario Andrés Jácome Mantilla. jsPDF (`js/vendor/`) se distribuye bajo su propia licencia MIT.
+La copia local de jsPDF conserva sus avisos de copyright y su [licencia MIT](js/vendor/jspdf.LICENSE.txt).

@@ -1,6 +1,7 @@
 # Credenciales y respaldos (pueden contener datos sensibles)
 *.json
 !package.json
+!package-lock.json
 *.pem
 *.key
 .env

@@ -3,9 +3,15 @@
   "version": "2.0.0",
   "private": true,
   "license": "MIT",
-  "engines": { "node": ">=22" },
+  "engines": { "node": "24.x" },
   "description": "SwimMeet Manager: gestión de competencias de natación (frontend estático con localStorage)",
   "scripts": {
+    "lint": "eslint --max-warnings 0 .",
     "test": "node --test \"tests/*.test.js\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "globals": "^17.0.0"
   }
 }

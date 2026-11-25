@@ -1,3 +1,4 @@
+/* exported confirmDialog, downloadFile, on, openForm, readFileAsText, toast */
 /**
  * Utilidades compartidas de SwimMeet Manager.
  * Las funciones puras se pueden probar en Node; las de DOM solo existen en el navegador.
