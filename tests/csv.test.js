@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { DataExporter } = require('../js/export.js');
 const { parseCsv, parseParticipantsCsv, PARTICIPANTS_CSV_TEMPLATE } = require('../js/csv.js');
 
 test('parseCsv detecta delimitador y respeta comillas', () => {
@@ -43,4 +44,27 @@ test('archivo vacío o demasiado grande', () => {
     assert.ok(parseParticipantsCsv('').errors.length > 0);
     const big = 'nombre\n' + Array.from({ length: 2001 }, (_, i) => `N${i}`).join('\n');
     assert.match(parseParticipantsCsv(big).errors[0], /máximo/);
+});
+
+test('rechaza toda la importación si queda una comilla sin cerrar', () => {
+    const csv = 'nombre;club\nNadadora Ficticia;Club QA\n"Otra Ficticia;Club QA';
+    assert.throws(() => parseCsv(csv), /comillas sin cerrar/);
+    const { participants, errors } = parseParticipantsCsv(csv);
+    assert.deepEqual(participants, []);
+    assert.match(errors[0], /comillas sin cerrar/);
+});
+
+test('detecta separadores fuera de campos entrecomillados, incluso con saltos de línea', () => {
+    const csv = '\r\n"Ficticia, nombre, compuesto\nQA";"Club; ficticio";F';
+    assert.deepEqual(parseCsv(csv), [['Ficticia, nombre, compuesto\nQA', 'Club; ficticio', 'F']]);
+});
+
+test('delimita el texto CSV y protege prefijos de fórmula con o sin espacios', () => {
+    const prefixes = ['=1', ' +1', '\t=1', '\r=1', '\n=1', ' ＠ficticio', '－1'];
+    const text = 'Club "Ficticio"; Escuela, QA';
+    const csv = DataExporter.toCSV([['Participante', 'Tiempo'], ...prefixes.map(prefix => [prefix, 32.45]), [text, null]]);
+    assert.ok(csv.startsWith('\uFEFF'));
+    const rows = parseCsv(csv);
+    assert.deepEqual(rows.slice(1, -1), prefixes.map(prefix => ["'" + prefix, '32.45']));
+    assert.deepEqual(rows.at(-1), [text, '']);
 });

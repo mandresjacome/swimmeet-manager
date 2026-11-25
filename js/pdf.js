@@ -1,14 +1,13 @@
+/* exported ResultsPdf */
 /**
  * Generación del PDF de resultados (jsPDF) con subida opcional a Google Drive.
  * Requiere utils.js, database.js y, si se quiere subir, js/config.js (APP_CONFIG.APPS_SCRIPT_URL).
- * jsPDF se carga desde js/vendor si la página no lo incluyó.
+ * resultados.html carga jsPDF desde js/vendor antes de este script.
  */
 
 const PDF_STATUS_LABELS = { OK: 'Válido', DQ: 'Descalificado', DNS: 'No se presentó', DNF: 'No terminó' };
 const PDF_UPLOAD_TIMEOUT_MS = 30000;
-const PDF_JSPDF_SRC = 'js/vendor/jspdf.umd.min.js';
-
-const PDF_PAGE = { width: 210, height: 297, margin: 15, footerY: 287, bottom: 280 };
+const PDF_PAGE = { width: 210, margin: 15, footerY: 287, bottom: 280 };
 const PDF_COLORS = {
     brand: [7, 42, 71],
     accent: [11, 92, 171],
@@ -29,6 +28,7 @@ const PDF_TABLE_COLUMNS = [
     { title: 'Estado', width: 25 }
 ];
 const PDF_ROW_HEIGHT = 6.2;
+const PDF_TABLE_HEADER_HEIGHT = PDF_ROW_HEIGHT + 0.8;
 const PDF_PODIUM_ROW_HEIGHT = 10;
 
 /** Helvetica estándar solo cubre Latin-1: se normalizan guiones y se descartan emojis y símbolos fuera de rango. */
@@ -89,21 +89,21 @@ class PdfWriter {
     }
 
     drawHeader({ name, subtitle, details }) {
-        const nameLines = this.doc.splitTextToSize(pdfText(name), this.contentWidth - 4).slice(0, 2);
         this.style({ size: 20, bold: true, color: [255, 255, 255] });
+        const nameLines = this.doc.splitTextToSize(pdfText(name), this.contentWidth - 4).slice(0, 2);
         const bandHeight = 12 + nameLines.length * 8.5 + (subtitle ? 8 : 0);
         this.fillRect(0, 0, PDF_PAGE.width, bandHeight, PDF_COLORS.brand);
 
         this.doc.text(nameLines, this.left, 16);
         if (subtitle) {
             this.style({ size: 11, color: [190, 215, 240] });
-            this.text(subtitle, this.left, 16 + nameLines.length * 8.5 - 1);
+            this.text(this.fit(subtitle, this.contentWidth), this.left, 16 + nameLines.length * 8.5 - 1);
         }
         this.y = bandHeight + 7;
 
         if (details) {
             this.style({ size: 9.5, color: PDF_COLORS.muted });
-            this.text(details, this.left, this.y);
+            this.text(this.fit(details, this.contentWidth), this.left, this.y);
             this.y += 8;
         }
     }
@@ -126,14 +126,25 @@ class PdfWriter {
         this.y += 11;
     }
 
-    drawPodium(podiumRows) {
+    drawContinuation(title, section = '') {
+        this.style({ size: 9, color: PDF_COLORS.muted });
+        const suffix = section ? ` · ${section} (continuación)` : ' (continuación)';
+        const name = this.fit(title, this.contentWidth - this.doc.getTextWidth(suffix));
+        this.text(name + suffix, this.left, this.y + 3);
+        this.y += 6;
+    }
+
+    drawPodium(podiumRows, title) {
         if (podiumRows.length === 0) {
             this.style({ size: 9, color: PDF_COLORS.muted });
             this.text('Sin tiempos válidos en esta prueba.', this.left + 3, this.y + 4);
             this.y += 9;
             return;
         }
-        podiumRows.forEach(row => this.drawPodiumRow(row));
+        for (const row of podiumRows) {
+            this.ensureSpace(PDF_PODIUM_ROW_HEIGHT, () => this.drawContinuation(title, 'podio'));
+            this.drawPodiumRow(row);
+        }
         this.y += 3;
     }
 
@@ -165,10 +176,10 @@ class PdfWriter {
     }
 
     drawTableHeader() {
-        this.fillRect(this.left, this.y, this.contentWidth, PDF_ROW_HEIGHT + 0.8, PDF_COLORS.accent);
+        this.fillRect(this.left, this.y, this.contentWidth, PDF_TABLE_HEADER_HEIGHT, PDF_COLORS.accent);
         this.style({ size: 8.5, bold: true, color: [255, 255, 255] });
         PDF_TABLE_COLUMNS.forEach((col, i) => this.text(col.title, this.cellX(i, col.align), this.y + 4.8, col.align));
-        this.y += PDF_ROW_HEIGHT + 0.8;
+        this.y += PDF_TABLE_HEADER_HEIGHT;
     }
 
     drawTableRow(row, index) {
@@ -195,12 +206,11 @@ class PdfWriter {
 
     /** Tabla completa; al saltar de página repite el encabezado y rotula la continuación. */
     drawTable(rows, continuationTitle) {
+        this.ensureSpace(PDF_TABLE_HEADER_HEIGHT + PDF_ROW_HEIGHT, () => this.drawContinuation(continuationTitle));
         this.drawTableHeader();
         rows.forEach((row, index) => {
             this.ensureSpace(PDF_ROW_HEIGHT, () => {
-                this.style({ size: 9, color: PDF_COLORS.muted });
-                this.text(`${continuationTitle} (continuación)`, this.left, this.y + 3);
-                this.y += 6;
+                this.drawContinuation(continuationTitle);
                 this.drawTableHeader();
             });
             this.drawTableRow(row, index);
@@ -235,7 +245,8 @@ const ResultsPdf = {
             const rows = db.getResultRows({ eventId, categoryId });
             if (rows.length === 0) return this.fail('No hay resultados para exportar', 'warning');
 
-            const jsPDF = await this.loadJsPdf();
+            const jsPDF = window.jspdf?.jsPDF;
+            if (!jsPDF) return this.fail('No se pudo cargar jsPDF', 'error');
             // Cede el hilo para que la interfaz pinte el estado "Generando…" antes del trabajo pesado
             await new Promise(resolve => setTimeout(resolve, 30));
 
@@ -248,12 +259,12 @@ const ResultsPdf = {
             this.reportOutcome(upload);
             return { ok: true, uploaded: upload.ok, reason: upload.ok ? null : upload.reason };
         } catch (error) {
-            return this.fail(`No se pudo generar el PDF:             ${error.message}`, 'error');
+            return this.fail(`No se pudo generar el PDF: ${error.message}`, 'error');
         }
     },
 
-                fail(reason, type) {
-                    toast(reason, type);
+    fail(reason, type) {
+        toast(reason, type);
         return { ok: false, uploaded: false, reason };
     },
 
@@ -261,19 +272,6 @@ const ResultsPdf = {
         if (upload.ok) toast('PDF descargado y subido a Google Drive', 'success');
         else if (upload.reason === 'not-configured') toast('PDF descargado', 'success');
         else toast(`PDF descargado, pero no se pudo subir a Drive: ${upload.reason}`, 'warning', 6000);
-    },
-
-    async loadJsPdf() {
-        if (!window.jspdf) {
-            await new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = PDF_JSPDF_SRC;
-                script.onload = resolve;
-                script.onerror = () => reject(new Error('no se pudo cargar jsPDF'));
-                document.head.appendChild(script);
-            });
-        }
-        return window.jspdf.jsPDF;
     },
 
     buildDocument(jsPDF, rows, filters) {
@@ -291,15 +289,18 @@ const ResultsPdf = {
             const podium = group.filter(row => row.status === 'OK' && row.position <= 3);
             const podiumHeight = podium.length ? podium.length * PDF_PODIUM_ROW_HEIGHT + 3 : 9;
 
-            // Título, podio y arranque de la tabla se mantienen juntos en la misma página
             const startsCategory = category_id !== currentCategory;
-            writer.ensureSpace((startsCategory ? 13 : 0) + 11 + podiumHeight + PDF_ROW_HEIGHT * 3);
+            const titleHeight = (startsCategory ? 13 : 0) + 11;
+            const tableStart = PDF_TABLE_HEADER_HEIGHT + PDF_ROW_HEIGHT;
+            const wholeStart = titleHeight + podiumHeight + tableStart;
+            const firstRow = podium.length ? PDF_PODIUM_ROW_HEIGHT : podiumHeight + tableStart;
+            writer.ensureSpace(wholeStart <= PDF_PAGE.bottom - PDF_PAGE.margin ? wholeStart : titleHeight + firstRow);
             if (startsCategory) {
                 currentCategory = category_id;
                 writer.drawCategoryTitle(category_name);
             }
             writer.drawEventTitle(event_name, group.length);
-            writer.drawPodium(podium);
+            writer.drawPodium(podium, event_name);
             writer.drawTable(group, event_name);
         });
 
@@ -345,7 +346,7 @@ const ResultsPdf = {
     /**
      * Sube el PDF mediante un Google Apps Script (ver INSTRUCCIONES_PDF.md). Solo cuenta como
      * subido si el script responde { success: true }. Se envía como text/plain para evitar el
-     * preflight CORS, que Apps Script no soporta.
+     * preflight CORS. La respuesta debe permitir la lectura desde el origen de la app.
      */
     async upload(blob, filename) {
         const url = (window.APP_CONFIG || {}).APPS_SCRIPT_URL;

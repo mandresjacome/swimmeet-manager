@@ -62,8 +62,8 @@ function saveEventForm(event) {
         city: value('city').trim(),
         date: value('date'),
         startTime: value('startTime'),
-        lanes: parseInt(value('lanes'), 10),
-        poolLength: parseInt(value('poolLength'), 10),
+        lanes: Number(value('lanes')),
+        poolLength: Number(value('poolLength')),
         description: value('description').trim(),
         rules: value('rules').split('\n').map(line => line.trim()).filter(Boolean),
         schedule: readRows('schedule'),
@@ -168,6 +168,7 @@ async function importBackup(event) {
         Layout.init('ajustes', 'Ajustes');
         toast('Copia importada correctamente', 'success');
     } catch (error) {
+        Layout.renderStorageWarning('ajustes');
         toast(error.message, 'error', 6000);
     }
 }
@@ -185,9 +186,14 @@ async function clearData() {
 }
 
 async function resetAll() {
-    if (!await confirmDanger('Restablecer todo', 'Se eliminará TODO, incluidos los datos del evento. La aplicación quedará como nueva.', 'Restablecer')) return;
-    db.clearAllData();
-    fillEventForm();
-    Layout.init('ajustes', 'Ajustes');
-    toast('Aplicación restablecida', 'success');
+    if (!await confirmDanger('Restablecer todo', 'Se eliminarán los datos y la configuración del evento. ¿Continuar?', 'Restablecer')) return;
+    try {
+        db.clearAllData();
+        fillEventForm();
+        Layout.init('ajustes', 'Ajustes');
+        toast('Aplicación restablecida', 'success');
+    } catch (error) {
+        Layout.renderStorageWarning('ajustes');
+        toast(error.message, 'error', 6000);
+    }
 }

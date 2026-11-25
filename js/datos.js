@@ -382,17 +382,23 @@ function importCsvForm() {
         parsed = parseParticipantsCsv(textarea.value);
         const problems = parsed.errors.length ? ` · ${parsed.errors.length} avisos` : '';
         preview.className = 'alert ' + (parsed.participants.length ? 'success' : 'info');
-        preview.textContent = textarea.value.trim()
-            ? `${parsed.participants.length} participantes listos para importar${problems}`
-            : 'Selecciona un archivo o pega datos para ver una vista previa.';
+        if (!textarea.value.trim()) preview.textContent = 'Selecciona un archivo o pega datos para ver una vista previa.';
+        else if (!parsed.participants.length) preview.textContent = parsed.errors[0];
+        else preview.textContent = `${parsed.participants.length} participantes listos para importar${problems}`;
     };
 
     textarea.addEventListener('input', debounce(updatePreview, 150));
     modal.el.querySelector('#f-file').addEventListener('change', async event => {
         const file = event.target.files[0];
         if (!file) return;
-        textarea.value = await readFileAsText(file);
-        updatePreview();
+        try {
+            textarea.value = await readFileAsText(file);
+            updatePreview();
+        } catch (error) {
+            textarea.value = '';
+            updatePreview();
+            toast(error.message, 'error');
+        }
     });
     modal.el.querySelector('[data-role="template"]').addEventListener('click', event => {
         event.preventDefault();

@@ -1,73 +1,87 @@
-# PDFs de resultados y subida a Google Drive
+# PDF de resultados y Google Drive
 
 ## Generar el PDF
 
-1. Abre **Resultados** (`resultados.html`).
-2. Opcional: filtra por categoría o prueba. El PDF respeta esos dos filtros; sin filtros incluye todo.
+1. Abre **Resultados**.
+2. Selecciona una categoría o prueba si quieres acotar el informe.
 3. Pulsa **Descargar PDF**.
 
-El PDF lleva el nombre del evento (de **Ajustes**), un podio y la tabla completa por prueba, encabezado repetido en cada página y numeración. Siempre se descarga en tu equipo.
+El informe incluye el podio y la tabla completa de cada prueba seleccionada. Los podios con empates pueden ocupar varias páginas. Las tablas repiten su encabezado al continuar y todas las páginas llevan numeración. El filtro de estado y la búsqueda se aplican al CSV. El PDF se genera en el navegador con la copia local de jsPDF y siempre se descarga en el equipo.
 
-## Subida automática a Google Drive (opcional)
+## Configurar la subida opcional
 
-La subida usa un **Google Apps Script** tuyo; no se necesita ninguna clave ni cuenta de servicio en el repositorio.
-
-1. Entra a [script.google.com](https://script.google.com) y crea un proyecto.
-2. Pega este código y cambia `FOLDER_ID` por el ID de tu carpeta de Drive (la parte final de su URL):
+La integración viene desactivada. Si decides usarla, crea un proyecto en [Google Apps Script](https://script.google.com) y pega el ejemplo con el ID de una carpeta dedicada de Drive.
 
 ```javascript
 const FOLDER_ID = 'ID_DE_TU_CARPETA';
-const MAX_BASE64_LENGTH = 10 * 1024 * 1024; // ~7 MB de PDF
+const MAX_PDF_BYTES = 7 * 1024 * 1024;
+const MAX_BASE64_LENGTH = 4 * Math.ceil(MAX_PDF_BYTES / 3);
 
 function doPost(e) {
+  let upload;
   try {
-    const data = JSON.parse(e.postData.contents);
-
-    if (typeof data.content !== 'string' || data.content.length > MAX_BASE64_LENGTH) {
-      throw new Error('Contenido inválido o demasiado grande');
-    }
-    // Nombre saneado: el cliente no controla rutas ni extensiones
-    const filename = String(data.filename || 'resultados.pdf')
-      .replace(/[^\w.\- ]/g, '_')
-      .slice(0, 120);
-
-    const blob = Utilities.newBlob(
-      Utilities.base64Decode(data.content),
-      'application/pdf',
-      filename
-    );
-    const file = DriveApp.getFolderById(FOLDER_ID).createFile(blob);
-
-    return ContentService.createTextOutput(JSON.stringify({
-      success: true,
-      fileId: file.getId(),
-      url: file.getUrl()
-    })).setMimeType(ContentService.MimeType.JSON);
+    upload = readPdfUpload(e && e.postData && e.postData.contents);
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({
-      success: false,
-      error: error.toString()
-    })).setMimeType(ContentService.MimeType.JSON);
+    return jsonResponse({ success: false, error: error.message });
   }
+
+  try {
+    const blob = Utilities.newBlob(upload.bytes, 'application/pdf', upload.filename);
+    DriveApp.getFolderById(FOLDER_ID).createFile(blob);
+    return jsonResponse({ success: true });
+  } catch {
+    return jsonResponse({ success: false, error: 'No se pudo guardar el PDF en Drive' });
+  }
+}
+
+function readPdfUpload(body) {
+  if (typeof body !== 'string' || body.length > MAX_BASE64_LENGTH + 1024) {
+    throw new Error('Solicitud inválida o demasiado grande');
+  }
+  let data;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    throw new Error('La solicitud debe contener un objeto JSON');
+  }
+
+  const filename = data && data.filename;
+  const content = data && data.content;
+  if (typeof filename !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,239}\.pdf$/i.test(filename)) {
+    throw new Error('El nombre del archivo debe ser un nombre simple con extensión .pdf');
+  }
+  if (typeof content !== 'string' || content.length > MAX_BASE64_LENGTH
+      || content.length % 4 !== 0 || !/^[a-z0-9+/]+={0,2}$/i.test(content)) {
+    throw new Error('Contenido base64 inválido o demasiado grande');
+  }
+
+  let bytes;
+  try {
+    bytes = Utilities.base64Decode(content);
+  } catch {
+    throw new Error('El contenido no se pudo decodificar');
+  }
+  const header = String.fromCharCode(...bytes.slice(0, 8));
+  const tail = String.fromCharCode(...bytes.slice(-1024));
+  if (bytes.length > MAX_PDF_BYTES || !/^%PDF-\d\.\d$/.test(header) || !/%%EOF\s*$/.test(tail)) {
+    throw new Error('El contenido debe tener una cabecera y un final de PDF válidos');
+  }
+  return { bytes, filename };
+}
+
+function jsonResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
 }
 ```
 
-3. **Implementar → Nueva implementación → Aplicación web**, ejecutar como *tú* y acceso *Cualquier persona*.
-4. Copia la URL generada y pégala en `js/config.js`:
+El ejemplo acepta PDF de hasta 7 MiB. Para usarlo desde la aplicación estática, el despliegue web tendría que admitir acceso anónimo y ejecutarse como el propietario. Evalúa primero los riesgos de esa configuración. Guarda la URL de ejecución únicamente en tu copia local de `js/config.js`, en `APPS_SCRIPT_URL`. Puedes comprobar si hay una URL en **Ajustes → Subida de PDFs a Google Drive**.
 
-```javascript
-window.APP_CONFIG = {
-    APPS_SCRIPT_URL: 'TU_URL_AQUI'
-};
-```
+La aplicación envía el nombre del archivo y el PDF en base64 con `Content-Type: text/plain`. Confirma la subida cuando puede leer una respuesta JSON con `success: true`. Google Content Service puede redirigir esa respuesta. El navegador debe permitir leerla desde el origen de SwimMeet Manager. Un error de red, permisos o tiempo de espera deja la descarga local disponible. [Documentación de Content Service](https://developers.google.com/apps-script/guides/content)
 
-La aplicación envía `{ filename, content }` (PDF en base64) como `text/plain` y solo da la subida por buena si el script responde `{ "success": true }`; en cualquier otro caso (error del script, HTTP, red o más de 30 s) lo informa y el PDF queda descargado igualmente.
+La integración se verificó con servicios simulados y datos ficticios. La revocación de credenciales históricas sigue pendiente de una comprobación independiente.
 
-En **Ajustes → Subida de PDFs a Google Drive** verás si la URL está configurada.
+## Privacidad y límites
 
-## Seguridad
-
-- **Nunca** subas claves privadas ni JSON de cuentas de servicio al repositorio. Este proyecto no las necesita.
-- La carpeta de destino vive **dentro del Apps Script**, no en el navegador: quien conozca la URL no puede elegir otra carpeta de tu Drive.
-- Un Web App con acceso "Cualquier persona" acepta archivos de quien tenga la URL. Mantén tu URL fuera de repositorios públicos (por eso `js/config.js` va vacío) y, si se filtra, crea una implementación nueva.
-- Si una clave se expuso alguna vez en Git, bórrala del código **y revócala** en Google Cloud (IAM → Cuentas de servicio → Claves): eliminarla de un archivo no la invalida.
+- El despliegue anónimo actúa bajo la identidad y cuotas del propietario. Cualquier persona que obtenga la URL puede intentar subir archivos. Configura una carpeta dedicada con acceso restringido y conserva la URL fuera del repositorio. Una URL incluida en el código servido al navegador es visible para quien pueda abrir la aplicación. [Permisos de aplicaciones web](https://developers.google.com/apps-script/guides/web) · [Cuotas de Apps Script](https://developers.google.com/apps-script/guides/services/quotas)
+- El ejemplo comprueba nombre, tamaño, base64 y marcas del formato PDF. Estas comprobaciones no autentican al emisor ni equivalen a analizar el contenido del documento. La exposición de la URL puede consumir almacenamiento y cuota. Si se filtra, archiva el despliegue anterior. [Gestión de despliegues](https://developers.google.com/apps-script/concepts/deployments)
+- Los PDF pueden contener nombres, clubes y resultados. Decide quién puede leer la carpeta antes de subir archivos. Las claves históricas requieren confirmación independiente de su revocación en el servicio correspondiente. [Claves de cuentas de servicio](https://docs.cloud.google.com/iam/docs/keys-create-delete)

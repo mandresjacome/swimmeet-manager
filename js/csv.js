@@ -8,10 +8,15 @@ const PARTICIPANTS_CSV_TEMPLATE = 'nombre,club,genero,categoria\nAna Pérez,Delf
 const MAX_IMPORT_ROWS = 2000;
 
 function detectDelimiter(text) {
-    const firstLine = text.split(/\r?\n/, 1)[0];
-    const counts = [',', ';', '\t'].map(d => [d, firstLine.split(d).length - 1]);
-    counts.sort((a, b) => b[1] - a[1]);
-    return counts[0][1] > 0 ? counts[0][0] : ',';
+    const counts = { ',': 0, ';': 0, '\t': 0 };
+    let quoted = false;
+    for (const char of text.replace(/^(?:[^\S\r\n]*\r?\n)+/, '')) {
+        if (char === '"') quoted = !quoted;
+        if (quoted) continue;
+        if (char === '\n' || char === '\r') break;
+        if (Object.hasOwn(counts, char)) counts[char]++;
+    }
+    return Object.keys(counts).reduce((best, char) => counts[char] > counts[best] ? char : best);
 }
 
 /** Convierte texto CSV en una matriz de filas (ignora filas vacías). */
@@ -41,6 +46,7 @@ function parseCsv(text) {
             field += char;
         }
     }
+    if (quoted) throw new SyntaxError('El CSV contiene un campo con comillas sin cerrar');
     row.push(field);
     rows.push(row);
 
@@ -70,7 +76,12 @@ const PARTICIPANT_COLUMNS = {
  * Cada participante: { name, club, gender ('F'|'M'|''), category (texto, opcional) }.
  */
 function parseParticipantsCsv(text) {
-    const rows = parseCsv(text);
+    let rows;
+    try {
+        rows = parseCsv(text);
+    } catch (error) {
+        return { participants: [], errors: [error.message] };
+    }
     const errors = [];
     if (rows.length === 0) return { participants: [], errors: ['El archivo está vacío'] };
 

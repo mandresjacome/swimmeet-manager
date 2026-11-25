@@ -9,60 +9,67 @@ function normalizeKey(text) {
     return String(text ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
+const COLLECTION_FIELDS = {
+    categories: ['category_id', 'category_name'],
+    events: ['event_id', 'event_name', 'category_id'],
+    participants: ['participant_id', 'name'],
+    entries: ['entry_id', 'event_id', 'participant_id'],
+    results: ['entry_id']
+};
+const ID_COLLECTIONS = { C: 'categories', E: 'events', P: 'participants', EN: 'entries' };
+const DATA_KEYS = [...Object.keys(COLLECTION_FIELDS), 'eventConfig'];
+const STORAGE_KEYS = [...DATA_KEYS, 'idCounters'];
+const GENDERS = ['', 'F', 'M'];
+
+function isRecord(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isText(value) {
+    return typeof value === 'string' && value.trim() !== '';
+}
+
+function slotInput(value) {
+    if (typeof value !== 'string') return value;
+    const text = value.trim();
+    return /^\d*$/.test(text) ? Number(text) : NaN;
+}
+
+function normalizedTime(value) {
+    if (typeof value !== 'number' && !(typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim()))) return NaN;
+    return Math.round(Number(value) * 100) / 100;
+}
+
 class SwimmingDatabase {
     static get STATUSES() { return ['OK', 'DQ', 'DNS', 'DNF']; }
-
-    constructor() {
-        this.initDatabase();
-    }
-
-    initDatabase() {
-        // Inicializar estructuras si no existen
-        if (!localStorage.getItem('categories')) {
-            localStorage.setItem('categories', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('events')) {
-            localStorage.setItem('events', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('participants')) {
-            localStorage.setItem('participants', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('entries')) {
-            localStorage.setItem('entries', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('results')) {
-            localStorage.setItem('results', JSON.stringify([]));
-        }
-    }
-
-    // ===================== CATEGORIES =====================
     
     getCategories() {
-        return JSON.parse(localStorage.getItem('categories') || '[]');
+        return structuredClone(this.readStorage().state.categories);
     }
 
     addCategory(name) {
-        const cleanName = String(name ?? '').trim();
-        if (!cleanName) return { error: 'El nombre de la categoría es obligatorio' };
+        if (!isText(name)) return { error: 'El nombre de la categoría es obligatorio' };
+        const cleanName = name.trim();
 
         const categories = this.getCategories();
         if (categories.some(c => normalizeKey(c.category_name) === normalizeKey(cleanName))) {
             return { error: 'Ya existe una categoría con ese nombre' };
         }
 
-        const id = this.nextId('C', categories, 'category_id');
+        const id = this.nextId('C');
+        if (id.error) return id;
         const category = {
-            category_id: id,
+            category_id: id.value,
             category_name: cleanName
         };
         categories.push(category);
-        localStorage.setItem('categories', JSON.stringify(categories));
+        this.writeChanges({ categories, idCounters: id.counters });
         return category;
     }
 
     updateCategory(id, name) {
-        const cleanName = String(name ?? '').trim();
-        if (!cleanName) return { error: 'El nombre de la categoría es obligatorio' };
+        if (!isText(name)) return { error: 'El nombre de la categoría es obligatorio' };
+        const cleanName = name.trim();
 
         const categories = this.getCategories();
         const index = categories.findIndex(c => c.category_id === id);
@@ -71,16 +78,16 @@ class SwimmingDatabase {
             return { error: 'Ya existe una categoría con ese nombre' };
         }
         categories[index].category_name = cleanName;
-        localStorage.setItem('categories', JSON.stringify(categories));
+        this.writeChanges({ categories });
         return true;
     }
 
     /** Elimina la categoría y, en cascada, sus pruebas, inscripciones y resultados. */
     deleteCategory(id) {
-        this.getEventsByCategory(id).forEach(e => this.deleteEvent(e.event_id));
+        const eventIds = new Set(this.getEventsByCategory(id).map(e => e.event_id));
+        const events = this.getEvents().filter(e => !eventIds.has(e.event_id));
         const categories = this.getCategories().filter(c => c.category_id !== id);
-        localStorage.setItem('categories', JSON.stringify(categories));
-        return true;
+        return this.deleteRelatedEntries(entry => eventIds.has(entry.event_id), { categories, events });
     }
 
     getCategoryById(id) {
@@ -91,12 +98,12 @@ class SwimmingDatabase {
     // ===================== EVENTS =====================
     
     getEvents() {
-        return JSON.parse(localStorage.getItem('events') || '[]');
+        return structuredClone(this.readStorage().state.events);
     }
 
     addEvent(name, categoryId) {
-        const cleanName = String(name ?? '').trim();
-        if (!cleanName) return { error: 'El nombre de la prueba es obligatorio' };
+        if (!isText(name)) return { error: 'El nombre de la prueba es obligatorio' };
+        const cleanName = name.trim();
         if (!this.getCategoryById(categoryId)) return { error: 'La categoría seleccionada no existe' };
 
         const events = this.getEvents();
@@ -104,20 +111,21 @@ class SwimmingDatabase {
             return { error: 'Esa categoría ya tiene una prueba con ese nombre' };
         }
 
-        const id = this.nextId('E', events, 'event_id');
+        const id = this.nextId('E');
+        if (id.error) return id;
         const event = {
-            event_id: id,
+            event_id: id.value,
             event_name: cleanName,
             category_id: categoryId
         };
         events.push(event);
-        localStorage.setItem('events', JSON.stringify(events));
+        this.writeChanges({ events, idCounters: id.counters });
         return event;
     }
 
     updateEvent(id, name, categoryId) {
-        const cleanName = String(name ?? '').trim();
-        if (!cleanName) return { error: 'El nombre de la prueba es obligatorio' };
+        if (!isText(name)) return { error: 'El nombre de la prueba es obligatorio' };
+        const cleanName = name.trim();
         if (!this.getCategoryById(categoryId)) return { error: 'La categoría seleccionada no existe' };
 
         const events = this.getEvents();
@@ -128,16 +136,14 @@ class SwimmingDatabase {
         }
         events[index].event_name = cleanName;
         events[index].category_id = categoryId;
-        localStorage.setItem('events', JSON.stringify(events));
+        this.writeChanges({ events });
         return true;
     }
 
     /** Elimina la prueba y, en cascada, sus inscripciones y resultados. */
     deleteEvent(id) {
-        this.getEntriesByEvent(id).forEach(e => this.deleteEntry(e.entry_id));
         const events = this.getEvents().filter(e => e.event_id !== id);
-        localStorage.setItem('events', JSON.stringify(events));
-        return true;
+        return this.deleteRelatedEntries(entry => entry.event_id === id, { events });
     }
 
     getEventById(id) {
@@ -153,37 +159,45 @@ class SwimmingDatabase {
     // ===================== PARTICIPANTS =====================
     
     getParticipants() {
-        return JSON.parse(localStorage.getItem('participants') || '[]');
+        return structuredClone(this.readStorage().state.participants);
     }
 
     addParticipant(name, club = '', gender = '') {
-        const cleanName = String(name ?? '').trim();
-        if (!cleanName) return { error: 'El nombre del participante es obligatorio' };
+        const error = this.validateParticipant(name, club, gender);
+        if (error) return { error };
 
         const participants = this.getParticipants();
-        const id = this.nextId('P', participants, 'participant_id');
+        const id = this.nextId('P');
+        if (id.error) return id;
         const participant = {
-            participant_id: id,
-            name: cleanName,
-            club_or_team: String(club ?? '').trim(),
-            gender: gender
+            participant_id: id.value,
+            name: name.trim(),
+            club_or_team: club.trim(),
+            gender
         };
         participants.push(participant);
-        localStorage.setItem('participants', JSON.stringify(participants));
+        this.writeChanges({ participants, idCounters: id.counters });
         return participant;
     }
 
-    updateParticipant(id, name, club, gender) {
-        const cleanName = String(name ?? '').trim();
-        if (!cleanName) return { error: 'El nombre del participante es obligatorio' };
+    validateParticipant(name, club, gender) {
+        if (!isText(name)) return 'El nombre del participante es obligatorio';
+        if (typeof club !== 'string') return 'El club debe ser texto';
+        if (!GENDERS.includes(gender)) return 'El género debe ser F, M o quedar sin especificar';
+        return null;
+    }
+
+    updateParticipant(id, name, club = '', gender = '') {
+        const error = this.validateParticipant(name, club, gender);
+        if (error) return { error };
 
         const participants = this.getParticipants();
         const index = participants.findIndex(p => p.participant_id === id);
         if (index !== -1) {
-            participants[index].name = cleanName;
-            participants[index].club_or_team = String(club ?? '').trim();
+            participants[index].name = name.trim();
+            participants[index].club_or_team = club.trim();
             participants[index].gender = gender;
-            localStorage.setItem('participants', JSON.stringify(participants));
+            this.writeChanges({ participants });
             return true;
         }
         return false;
@@ -191,10 +205,8 @@ class SwimmingDatabase {
 
     /** Elimina al participante y, en cascada, sus inscripciones y resultados. */
     deleteParticipant(id) {
-        this.getEntries().filter(e => e.participant_id === id).forEach(e => this.deleteEntry(e.entry_id));
         const participants = this.getParticipants().filter(p => p.participant_id !== id);
-        localStorage.setItem('participants', JSON.stringify(participants));
-        return true;
+        return this.deleteRelatedEntries(entry => entry.participant_id === id, { participants });
     }
 
     getParticipantById(id) {
@@ -205,15 +217,15 @@ class SwimmingDatabase {
     // ===================== ENTRIES =====================
     
     getEntries() {
-        return JSON.parse(localStorage.getItem('entries') || '[]');
+        return structuredClone(this.readStorage().state.entries);
     }
 
     addEntry(eventId, participantId, heat = 0, lane = 0) {
         if (!this.getEventById(eventId)) return { error: 'La prueba no existe' };
         if (!this.getParticipantById(participantId)) return { error: 'El participante no existe' };
 
-        const heatNum = parseInt(heat, 10) || 0;
-        const laneNum = parseInt(lane, 10) || 0;
+        const heatNum = slotInput(heat);
+        const laneNum = slotInput(lane);
         const slotError = this.validateSlot(heatNum, laneNum);
         if (slotError) return { error: slotError };
 
@@ -225,30 +237,34 @@ class SwimmingDatabase {
             return { error: 'El carril ya está ocupado en esa serie' };
         }
 
+        const id = this.nextId('EN');
+        if (id.error) return id;
         const entry = {
-            entry_id: this.nextId('EN', entries, 'entry_id'),
+            entry_id: id.value,
             event_id: eventId,
             participant_id: participantId,
             heat: heatNum,
             lane: laneNum
         };
         entries.push(entry);
-        localStorage.setItem('entries', JSON.stringify(entries));
+        this.writeChanges({ entries, idCounters: id.counters });
         return entry;
     }
 
     // Serie y carril van juntos: ambos 0 (sin asignar) o ambos válidos.
-    validateSlot(heat, lane) {
-        if (heat < 0 || lane < 0) return 'Serie y carril deben ser números positivos';
+    validateSlot(heat, lane, lanes = this.getEventConfig().lanes) {
+        if (![heat, lane].every(value => Number.isSafeInteger(value) && value >= 0)) {
+            return 'Serie y carril deben ser enteros no negativos';
+        }
         if ((heat === 0) !== (lane === 0)) return 'Indica serie y carril, o deja ambos sin asignar';
-        if (lane > this.getEventConfig().lanes) return `El carril máximo es ${this.getEventConfig().lanes}`;
+        if (lane > lanes) return `El carril máximo es ${lanes}`;
         return null;
     }
 
     /** Asigna (o libera con 0/0) la serie y el carril de una inscripción. */
     assignLane(entryId, heat, lane) {
-        const heatNum = parseInt(heat, 10) || 0;
-        const laneNum = parseInt(lane, 10) || 0;
+        const heatNum = slotInput(heat);
+        const laneNum = slotInput(lane);
         const slotError = this.validateSlot(heatNum, laneNum);
         if (slotError) return { error: slotError };
 
@@ -261,7 +277,7 @@ class SwimmingDatabase {
         }
         entry.heat = heatNum;
         entry.lane = laneNum;
-        localStorage.setItem('entries', JSON.stringify(entries));
+        this.writeChanges({ entries });
         return true;
     }
 
@@ -270,6 +286,7 @@ class SwimmingDatabase {
      * carriles libres. Devuelve cuántas inscripciones se asignaron.
      */
     autoAssignLanes(eventId, lanes = this.getEventConfig().lanes) {
+        if (!Number.isInteger(lanes) || lanes < 1 || lanes > this.getEventConfig().lanes) return 0;
         const entries = this.getEntries();
         const mine = entries.filter(e => e.event_id === eventId);
         const taken = new Set(mine.filter(e => e.heat && e.lane).map(e => `${e.heat}-${e.lane}`));
@@ -287,7 +304,7 @@ class SwimmingDatabase {
             taken.add(`${heat}-${lane}`);
         });
 
-        if (pending.length) localStorage.setItem('entries', JSON.stringify(entries));
+        if (pending.length) this.writeChanges({ entries });
         return pending.length;
     }
 
@@ -303,25 +320,24 @@ class SwimmingDatabase {
     }
 
     deleteEntry(id) {
-        const entries = this.getEntries().filter(e => e.entry_id !== id);
-        localStorage.setItem('entries', JSON.stringify(entries));
-        this.deleteResult(id);
+        return this.deleteRelatedEntries(entry => entry.entry_id === id);
+    }
+
+    deleteRelatedEntries(matches, changes = {}) {
+        const removed = new Set();
+        const entries = this.getEntries().filter(entry => {
+            if (!matches(entry)) return true;
+            removed.add(entry.entry_id);
+            return false;
+        });
+        const results = this.getResults().filter(result => !removed.has(result.entry_id));
+        this.writeChanges({ ...changes, entries, results });
         return true;
     }
 
     getEntriesByEvent(eventId) {
         const entries = this.getEntries();
         return entries.filter(e => e.event_id === eventId);
-    }
-
-    getEntriesByEventAndHeat(eventId, heat) {
-        const entries = this.getEntries();
-        return entries.filter(e => e.event_id === eventId && e.heat == heat)
-            .sort((a, b) => a.lane - b.lane);
-    }
-
-    getAllEntries() {
-        return this.getEntries();
     }
 
     getEntryById(entryId) {
@@ -348,7 +364,7 @@ class SwimmingDatabase {
     // ===================== RESULTS =====================
     
     getResults() {
-        return JSON.parse(localStorage.getItem('results') || '[]');
+        return structuredClone(this.readStorage().state.results);
     }
 
     /** Guarda (o reemplaza) el resultado de una inscripción. Solo `OK` lleva tiempo. */
@@ -358,32 +374,36 @@ class SwimmingDatabase {
 
         let time = null;
         if (status === 'OK') {
-            time = Math.round(Number(timeSeconds) * 100) / 100;
+            time = normalizedTime(timeSeconds);
             if (!Number.isFinite(time) || time <= 0) return { error: 'El tiempo debe ser un número mayor que cero' };
         }
 
         const results = this.getResults();
+        const existingIndex = results.findIndex(r => r.entry_id === entryId);
+        const resultId = results[existingIndex]?.result_id ?? `R-${entryId}`;
+        if (results.some(r => r.entry_id !== entryId && r.result_id === resultId)) {
+            return { error: 'El identificador del resultado ya está en uso' };
+        }
         const result = {
-            result_id: `R-${entryId}`,
+            result_id: resultId,
             entry_id: entryId,
             time_seconds: time,
             status: status
         };
 
-        const existingIndex = results.findIndex(r => r.entry_id === entryId);
         if (existingIndex !== -1) {
             results[existingIndex] = result;
         } else {
             results.push(result);
         }
 
-        localStorage.setItem('results', JSON.stringify(results));
+        this.writeChanges({ results });
         return result;
     }
 
     deleteResult(entryId) {
         const results = this.getResults().filter(r => r.entry_id !== entryId);
-        localStorage.setItem('results', JSON.stringify(results));
+        this.writeChanges({ results });
         return true;
     }
 
@@ -499,26 +519,28 @@ class SwimmingDatabase {
     }
 
     getEventConfig() {
-        let stored = {};
-        try {
-            stored = JSON.parse(localStorage.getItem('eventConfig') || '{}') || {};
-        } catch (error) {
-            stored = {};
-        }
-        return { ...SwimmingDatabase.DEFAULT_EVENT_CONFIG, ...stored };
+        return structuredClone(this.readStorage().state.eventConfig);
     }
 
     /** Devuelve la lista de errores de una configuración (vacía si es válida). */
     validateEventConfig(config) {
         const errors = [];
-        if (!config || typeof config !== 'object' || Array.isArray(config)) return ['La configuración debe ser un objeto'];
+        if (!isRecord(config)) return ['La configuración debe ser un objeto'];
 
         ['name', 'organizer', 'venue', 'city', 'description'].forEach(key => {
             if (config[key] !== undefined && typeof config[key] !== 'string') errors.push(`"${key}" debe ser texto`);
         });
         if (config.name !== undefined && String(config.name).trim() === '') errors.push('El nombre del evento es obligatorio');
-        if (config.date !== undefined && config.date !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(config.date)) errors.push('La fecha debe tener formato AAAA-MM-DD');
-        if (config.startTime !== undefined && config.startTime !== '' && !/^\d{2}:\d{2}$/.test(config.startTime)) errors.push('La hora debe tener formato HH:MM');
+        if (config.date !== undefined && config.date !== '') {
+            const date = typeof config.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(config.date)
+                ? new Date(`${config.date}T00:00:00Z`)
+                : null;
+            if (!date || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== config.date) {
+                errors.push('La fecha debe ser válida y tener formato AAAA-MM-DD');
+            }
+        }
+        const validHour = value => value === '' || (typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value));
+        if (config.startTime !== undefined && !validHour(config.startTime)) errors.push('La hora debe ser válida y tener formato HH:MM');
         if (config.lanes !== undefined && !(Number.isInteger(config.lanes) && config.lanes >= 1 && config.lanes <= 12)) errors.push('Los carriles deben ser un entero entre 1 y 12');
         if (config.poolLength !== undefined && ![25, 50].includes(config.poolLength)) errors.push('La piscina debe ser de 25 o 50 metros');
 
@@ -526,13 +548,16 @@ class SwimmingDatabase {
             if (config[key] === undefined) return;
             if (!Array.isArray(config[key])) { errors.push(`"${key}" debe ser una lista`); return; }
             config[key].forEach((item, i) => {
-                if (!item || typeof item !== 'object' || fields.some(f => typeof item[f] !== 'string')) {
+                if (!isRecord(item) || fields.some(f => typeof item[f] !== 'string')) {
                     errors.push(`${key}[${i}] debe tener los campos de texto: ${fields.join(', ')}`);
                 }
             });
         };
         listOfObjects('contacts', ['name', 'role', 'phone', 'email']);
         listOfObjects('schedule', ['time', 'label']);
+        if (Array.isArray(config.schedule) && config.schedule.some(item => !validHour(item?.time))) {
+            errors.push('Las horas del programa deben tener formato HH:MM');
+        }
         if (config.rules !== undefined && (!Array.isArray(config.rules) || config.rules.some(r => typeof r !== 'string'))) {
             errors.push('"rules" debe ser una lista de textos');
         }
@@ -545,166 +570,275 @@ class SwimmingDatabase {
         if (typeof merged.name === 'string') merged.name = merged.name.trim();
         const errors = this.validateEventConfig(merged);
         if (errors.length) return { error: errors[0], errors };
-        localStorage.setItem('eventConfig', JSON.stringify(merged));
+        if (this.getEntries().some(entry => entry.lane > merged.lanes)) {
+            return { error: 'Reasigna o libera los carriles que superan el nuevo máximo antes de guardar' };
+        }
+        this.writeChanges({ eventConfig: merged });
         return merged;
     }
 
-    // ===================== UTILITIES =====================
-    
-    generateId(prefix, index) {
-        const paddedIndex = String(index + 1).padStart(3, '0');
-        return `${prefix}-${paddedIndex}`;
+    emptyState() {
+        return {
+            categories: [], events: [], participants: [], entries: [], results: [],
+            eventConfig: SwimmingDatabase.DEFAULT_EVENT_CONFIG,
+            idCounters: {}
+        };
     }
 
-    // Siguiente ID libre: usa el mayor sufijo existente, no la cantidad de registros,
-    // para no repetir IDs después de eliminar elementos.
-    nextId(prefix, items, field) {
-        const pattern = new RegExp(`^${prefix}-(\\d+)$`);
-        const max = items.reduce((acc, item) => {
-            const match = pattern.exec(item && item[field]);
-            return match ? Math.max(acc, parseInt(match[1], 10)) : acc;
-        }, 0);
-        return this.generateId(prefix, max);
+    collectCounters(state) {
+        const counters = {};
+        for (const [prefix, key] of Object.entries(ID_COLLECTIONS)) {
+            const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+            const idField = COLLECTION_FIELDS[key][0];
+            const storedCounter = state.idCounters?.[prefix];
+            const minimum = Number.isSafeInteger(storedCounter) && storedCounter >= 0 ? storedCounter : 0;
+            const items = Array.isArray(state[key]) ? state[key] : [];
+            counters[prefix] = items.reduce((max, item) => {
+                const id = item?.[idField];
+                const suffix = typeof id === 'string' ? Number(pattern.exec(id)?.[1]) : NaN;
+                return Number.isSafeInteger(suffix) ? Math.max(max, suffix) : max;
+            }, minimum);
+        }
+        return counters;
+    }
+
+    nextId(prefix) {
+        const counters = { ...this.readStorage().state.idCounters };
+        const next = counters[prefix] + 1;
+        if (!Number.isSafeInteger(next)) return { error: 'Se agotaron los identificadores de esta colección' };
+        counters[prefix] = next;
+        return { value: `${prefix}-${String(next).padStart(3, '0')}`, counters };
+    }
+
+    validateState(state) {
+        const errors = this.validateEventConfig(state.eventConfig);
+        if (!isRecord(state.idCounters) || Object.entries(state.idCounters).some(
+            ([key, value]) => !Object.hasOwn(ID_COLLECTIONS, key) || !Number.isSafeInteger(value) || value < 0
+        )) {
+            errors.push('Los contadores de identificadores deben ser enteros no negativos');
+        }
+
+        const ids = {};
+        for (const [key, fields] of Object.entries(COLLECTION_FIELDS)) {
+            const items = state[key];
+            if (!Array.isArray(items)) {
+                errors.push(`"${key}" debe ser una lista`);
+                continue;
+            }
+            const [idField] = fields;
+            ids[key] = new Set();
+            items.forEach((item, index) => {
+                const label = `${key}[${index}]`;
+                if (!isRecord(item)) {
+                    errors.push(`${label} debe ser un objeto`);
+                    return;
+                }
+                for (const field of fields) {
+                    if (!isText(item[field])) errors.push(`${label} requiere "${field}" (texto no vacío)`);
+                    else if (field.endsWith('_id') && item[field] !== item[field].trim()) {
+                        errors.push(`${label} contiene un identificador con espacios externos`);
+                    }
+                }
+                if (ids[key].has(item[idField])) errors.push(`${label} repite "${idField}"`);
+                ids[key].add(item[idField]);
+            });
+        }
+        if (errors.length) return errors;
+
+        const unique = (seen, key, message) => {
+            if (seen.has(key)) errors.push(message);
+            seen.add(key);
+        };
+        const categoryNames = new Set();
+        for (const category of state.categories) {
+            unique(categoryNames, normalizeKey(category.category_name), 'Hay categorías con el mismo nombre');
+        }
+        const eventNames = new Set();
+        for (const event of state.events) {
+            if (!ids.categories.has(event.category_id)) errors.push('Una prueba referencia una categoría inexistente');
+            unique(eventNames, JSON.stringify([event.category_id, normalizeKey(event.event_name)]),
+                'Hay pruebas con el mismo nombre en una categoría');
+        }
+        for (const person of state.participants) {
+            const { name, club_or_team: club = '', gender = '' } = person;
+            const error = this.validateParticipant(name, club, gender);
+            if (error) errors.push(error);
+        }
+
+        const enrollments = new Set();
+        const slots = new Set();
+        const lanes = state.eventConfig.lanes ?? SwimmingDatabase.DEFAULT_EVENT_CONFIG.lanes;
+        for (const entry of state.entries) {
+            const { event_id: eventId, participant_id: participantId, heat = 0, lane = 0 } = entry;
+            if (!ids.events.has(eventId)) errors.push('Una inscripción referencia una prueba inexistente');
+            if (!ids.participants.has(participantId)) errors.push('Una inscripción referencia un participante inexistente');
+            unique(enrollments, JSON.stringify([eventId, participantId]), 'Hay inscripciones duplicadas en una prueba');
+            const error = this.validateSlot(heat, lane, lanes);
+            if (error) errors.push(error);
+            else if (heat) unique(slots, JSON.stringify([eventId, heat, lane]), 'Hay un carril ocupado dos veces en una serie');
+        }
+
+        const resultIds = new Set();
+        for (const result of state.results) {
+            const { entry_id: entryId, result_id: resultId = `R-${entryId}`, status, time_seconds: time = null } = result;
+            if (!ids.entries.has(entryId)) errors.push('Un resultado referencia una inscripción inexistente');
+            if (!isText(resultId) || resultId !== resultId.trim()) errors.push('El identificador del resultado es inválido');
+            else unique(resultIds, resultId, 'Hay identificadores de resultados duplicados');
+            if (!SwimmingDatabase.STATUSES.includes(status)) errors.push('Un resultado tiene un estado inválido');
+            else if (status === 'OK') {
+                if (!Number.isFinite(time) || !Number.isFinite(normalizedTime(time)) || normalizedTime(time) <= 0) {
+                    errors.push('Un resultado válido requiere un tiempo positivo en segundos');
+                }
+            } else if (time !== null) errors.push('Solo los resultados con estado OK pueden tener tiempo');
+        }
+        return errors;
+    }
+
+    normalizeState(state) {
+        return {
+            ...state,
+            eventConfig: { ...SwimmingDatabase.DEFAULT_EVENT_CONFIG, ...state.eventConfig },
+            participants: state.participants.map(person => ({ club_or_team: '', gender: '', ...person })),
+            entries: state.entries.map(entry => ({ heat: 0, lane: 0, ...entry })),
+            results: state.results.map(result => ({
+                result_id: `R-${result.entry_id}`,
+                ...result,
+                time_seconds: result.status === 'OK' ? normalizedTime(result.time_seconds) : null
+            })),
+            idCounters: this.collectCounters(state)
+        };
+    }
+
+    readStorage() {
+        let raw;
+        try {
+            raw = Object.fromEntries(STORAGE_KEYS.map(key => [key, localStorage.getItem(key)]));
+        } catch {
+            return { raw: null, state: this.emptyState(), errors: ['El navegador bloqueó el acceso al almacenamiento'] };
+        }
+        if (this.loaded && STORAGE_KEYS.every(key => raw[key] === this.loaded.raw[key])) return this.loaded;
+
+        const parsed = this.emptyState();
+        const errors = [];
+        for (const key of STORAGE_KEYS) {
+            if (raw[key] === null) continue;
+            try {
+                parsed[key] = JSON.parse(raw[key]);
+            } catch {
+                errors.push(`No se pudo leer "${key}" del almacenamiento`);
+            }
+        }
+        errors.push(...this.validateState(parsed));
+        const state = errors.length
+            ? { ...this.emptyState(), idCounters: this.collectCounters(parsed) }
+            : this.normalizeState(parsed);
+        this.loaded = { raw, state, errors };
+        return this.loaded;
+    }
+
+    getStorageProblems() {
+        return [...this.readStorage().errors];
+    }
+
+    writeChanges(changes, { allowRecovery = false } = {}) {
+        const { raw, state, errors } = this.readStorage();
+        if (!raw || (errors.length && !allowRecovery)) {
+            throw new Error('El almacenamiento requiere recuperación desde Ajustes');
+        }
+        const values = { ...changes };
+        if (!Object.hasOwn(changes, 'idCounters')) values.idCounters = state.idCounters;
+        const written = [];
+        try {
+            for (const [key, value] of Object.entries(values)) {
+                const serialized = value === null ? null : JSON.stringify(value);
+                if (serialized === raw[key]) continue;
+                if (serialized === null) localStorage.removeItem(key);
+                else localStorage.setItem(key, serialized);
+                written.push(key);
+            }
+        } catch {
+            let restored = true;
+            for (const key of written.reverse()) {
+                try {
+                    if (raw[key] === null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, raw[key]);
+                } catch {
+                    restored = false;
+                }
+            }
+            throw new Error(restored
+                ? 'No se pudo guardar. Se conservaron los datos anteriores.'
+                : 'No se pudo guardar ni recuperar todo el estado anterior. Revisa el almacenamiento en Ajustes.');
+        }
     }
 
     exportData() {
+        const { raw, state, errors } = this.readStorage();
         return {
             app: 'SwimMeet Manager',
             version: 2,
-            eventConfig: this.getEventConfig(),
-            categories: this.getCategories(),
-            events: this.getEvents(),
-            participants: this.getParticipants(),
-            entries: this.getEntries(),
-            results: this.getResults(),
+            ...(errors.length ? { storageRecovery: { raw, errors } } : structuredClone(state)),
             exportDate: new Date().toISOString()
         };
     }
 
-    // Campos obligatorios (string) por colección; el primero es el identificador
-    static get IMPORT_SCHEMA() {
-        return {
-            categories: ['category_id', 'category_name'],
-            events: ['event_id', 'event_name', 'category_id'],
-            participants: ['participant_id', 'name'],
-            entries: ['entry_id', 'event_id', 'participant_id'],
-            results: ['entry_id']
-        };
+    prepareImport(data) {
+        if (!isRecord(data)) return { errors: ['El respaldo debe ser un objeto JSON'] };
+        if (Object.hasOwn(data, 'storageRecovery')) {
+            return { errors: ['Esta copia de recuperación contiene datos sin procesar y requiere revisión manual'] };
+        }
+        if ((data.app !== undefined && data.app !== 'SwimMeet Manager')
+            || (data.version !== undefined && ![1, 2].includes(data.version))) {
+            return { errors: ['El archivo no es un respaldo compatible de SwimMeet Manager'] };
+        }
+        const keys = DATA_KEYS.filter(key => Object.hasOwn(data, key));
+        if (!keys.length) return { errors: ['El archivo no contiene datos reconocibles'] };
+
+        const current = this.readStorage();
+        if (current.errors.length && keys.length !== DATA_KEYS.length) {
+            return { errors: ['Para recuperar el almacenamiento se requiere un respaldo completo'] };
+        }
+        const state = { ...current.state };
+        for (const key of keys) state[key] = data[key];
+        if (data.idCounters !== undefined) state.idCounters = data.idCounters;
+        const errors = this.validateState(state);
+        if (errors.length) return { errors };
+
+        const clean = this.normalizeState(state);
+        for (const [prefix, counter] of Object.entries(current.state.idCounters)) {
+            clean.idCounters[prefix] = Math.max(clean.idCounters[prefix], counter);
+        }
+        return { errors, changes: Object.fromEntries([...keys, 'idCounters'].map(key => [key, clean[key]])) };
     }
 
-    /**
-     * Valida la estructura de un respaldo sin modificar nada.
-     * Devuelve { valid, errors }.
-     */
     validateImportData(data) {
-        const errors = [];
-
-        if (!data || typeof data !== 'object' || Array.isArray(data)) {
-            return { valid: false, errors: ['El respaldo debe ser un objeto JSON'] };
-        }
-
-        const schema = SwimmingDatabase.IMPORT_SCHEMA;
-        const present = Object.keys(schema).filter(key => data[key] !== undefined);
-        if (present.length === 0 && data.eventConfig === undefined) {
-            return { valid: false, errors: ['El archivo no contiene datos reconocibles (eventConfig, categories, events, participants, entries, results)'] };
-        }
-        if (data.eventConfig !== undefined) {
-            errors.push(...this.validateEventConfig(data.eventConfig));
-        }
-
-        present.forEach(key => {
-            const items = data[key];
-            if (!Array.isArray(items)) {
-                errors.push(`"${key}" debe ser una lista`);
-                return;
-            }
-
-            const idField = schema[key][0];
-            const seen = new Set();
-            items.forEach((item, index) => {
-                if (!item || typeof item !== 'object' || Array.isArray(item)) {
-                    errors.push(`${key}[${index}] no es un objeto`);
-                    return;
-                }
-                schema[key].forEach(field => {
-                    if (typeof item[field] !== 'string' || item[field].trim() === '') {
-                        errors.push(`${key}[${index}] requiere "${field}" (texto no vacío)`);
-                    }
-                });
-                if (typeof item[idField] === 'string') {
-                    if (seen.has(item[idField])) {
-                        errors.push(`${key}: "${idField}" duplicado (${item[idField]})`);
-                    }
-                    seen.add(item[idField]);
-                }
-            });
-
-            if (key === 'entries') {
-                items.forEach((item, index) => {
-                    if (item && ['heat', 'lane'].some(f => item[f] !== undefined && !Number.isFinite(Number(item[f])))) {
-                        errors.push(`entries[${index}] tiene heat/lane no numérico`);
-                    }
-                });
-            }
-            if (key === 'results') {
-                items.forEach((item, index) => {
-                    if (!item) return;
-                    if (item.status !== undefined && !['OK', 'DQ', 'DNS', 'DNF'].includes(item.status)) {
-                        errors.push(`results[${index}] tiene un estado inválido (${item.status})`);
-                    }
-                    if (item.time_seconds !== undefined && item.time_seconds !== null && !Number.isFinite(item.time_seconds)) {
-                        errors.push(`results[${index}] tiene time_seconds no numérico`);
-                    }
-                });
-            }
-        });
-
+        const { errors } = this.prepareImport(data);
         return { valid: errors.length === 0, errors };
     }
 
     importData(data) {
-        const { valid, errors } = this.validateImportData(data);
-        if (!valid) {
-            console.error('Respaldo inválido:', errors);
-            return false;
-        }
-
-        // Escritura atómica: si algo falla (p. ej. cuota llena) se restaura el estado previo
-        const keys = [...Object.keys(SwimmingDatabase.IMPORT_SCHEMA), 'eventConfig'].filter(key => data[key] !== undefined);
-        const previous = {};
-        keys.forEach(key => { previous[key] = localStorage.getItem(key); });
-
+        const { errors, changes } = this.prepareImport(data);
+        this.lastImportError = errors[0];
+        if (errors.length) return false;
         try {
-            keys.forEach(key => localStorage.setItem(key, JSON.stringify(data[key])));
+            this.writeChanges(changes, { allowRecovery: true });
             return true;
         } catch (error) {
-            console.error('Error importing data:', error);
-            keys.forEach(key => {
-                try {
-                    if (previous[key] === null) {
-                        localStorage.removeItem(key);
-                    } else {
-                        localStorage.setItem(key, previous[key]);
-                    }
-                } catch (restoreError) {
-                    console.error(`No se pudo restaurar "${key}":`, restoreError);
-                }
-            });
+            this.lastImportError = error.message;
             return false;
         }
     }
 
-    /** Borra todos los datos de la competencia. `keepConfig` conserva los datos del evento. */
+    /** Borra los datos de la competencia y conserva los contadores disponibles. */
     clearAllData({ keepConfig = false } = {}) {
-        ['categories', 'events', 'participants', 'entries', 'results'].forEach(key => localStorage.removeItem(key));
-        if (!keepConfig) localStorage.removeItem('eventConfig');
-        this.initDatabase();
+        const keys = DATA_KEYS.filter(key => key !== 'eventConfig' || !keepConfig);
+        this.writeChanges(Object.fromEntries(keys.map(key => [key, null])), { allowRecovery: !keepConfig });
         return true;
     }
 
     /** Borra solo resultados (conserva participantes, pruebas e inscripciones). */
     clearResults() {
-        localStorage.setItem('results', JSON.stringify([]));
+        this.writeChanges({ results: [] });
         return true;
     }
 }

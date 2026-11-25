@@ -11,9 +11,10 @@ class DataExporter {
     // ===================== Respaldo JSON =====================
 
     static exportJSON() {
-        const json = JSON.stringify(db.exportData(), null, 2);
-        downloadFile(json, this.fileName('respaldo', 'json'), 'application/json');
-        toast('Respaldo descargado', 'success');
+        const data = db.exportData();
+        const kind = data.storageRecovery ? 'recuperacion' : 'respaldo';
+        downloadFile(JSON.stringify(data, null, 2), this.fileName(kind, 'json'), 'application/json');
+        toast(data.storageRecovery ? 'Copia de recuperación descargada' : 'Respaldo descargado', 'success');
         return true;
     }
 
@@ -28,7 +29,7 @@ class DataExporter {
         const { valid, errors } = db.validateImportData(data);
         if (!valid) throw new Error(this.describeProblems(errors));
         if (!db.importData(data)) {
-            throw new Error('No se pudo guardar el respaldo (¿almacenamiento del navegador lleno?). Tus datos actuales no se modificaron.');
+            throw new Error(db.lastImportError);
         }
 
         const { categories, events, participants, entries, results } = db.getStats();
@@ -38,7 +39,7 @@ class DataExporter {
     static parseBackup(text) {
         try {
             return JSON.parse(text);
-        } catch (error) {
+        } catch {
             throw new Error('El archivo no es un JSON válido. Usa un respaldo descargado desde esta aplicación.');
         }
     }
@@ -60,32 +61,6 @@ class DataExporter {
             row.heat || '', row.lane || '', row.status === 'OK' ? formatTime(row.time) : '', row.time ?? '', row.status
         ]);
         return this.downloadCSV('resultados', header, body, 'No hay resultados para exportar');
-    }
-
-    static exportParticipantsCSV() {
-        const header = ['ID', 'Nombre', 'Club o equipo', 'Género'];
-        const body = db.getParticipants().map(p => [p.participant_id, p.name, p.club_or_team, p.gender]);
-        return this.downloadCSV('participantes', header, body, 'No hay participantes para exportar');
-    }
-
-    static exportEntriesCSV() {
-        const participants = new Map(db.getParticipants().map(p => [p.participant_id, p]));
-        const events = new Map(db.getEvents().map(e => [e.event_id, e]));
-        const categories = new Map(db.getCategories().map(c => [c.category_id, c]));
-        const header = ['Categoría', 'Prueba', 'Participante', 'Club', 'Serie', 'Carril'];
-        const body = db.getEntries().map(entry => {
-            const event = events.get(entry.event_id);
-            const participant = participants.get(entry.participant_id);
-            return [
-                categories.get(event?.category_id)?.category_name ?? '',
-                event?.event_name ?? '',
-                participant?.name ?? '',
-                participant?.club_or_team ?? '',
-                entry.heat || '',
-                entry.lane || ''
-            ];
-        });
-        return this.downloadCSV('inscripciones', header, body, 'No hay inscripciones para exportar');
     }
 
     /** Aplica el estado y la búsqueda (sin tildes) sobre filas de db.getResultRows(). */
@@ -111,11 +86,12 @@ class DataExporter {
         return DataExporter.CSV_BOM + rows.map(row => row.map(cell => this.csvCell(cell)).join(',')).join('\r\n') + '\r\n';
     }
 
-    /** Escapa una celda: comillas RFC 4180 y prefijo ' contra inyección de fórmulas en texto. */
+    /** Delimita el texto al exportar y antepone un apóstrofo a prefijos de fórmula. */
     static csvCell(value) {
-        let text = value === null || value === undefined ? '' : String(value);
-        if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-        return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+        const text = value === null || value === undefined ? '' : String(value);
+        if (typeof value !== 'string') return text;
+        const startsLikeFormula = /^(?:[\t\r\n]|\s*[=+\-@＝＋－＠])/u.test(text);
+        return `"${startsLikeFormula ? "'" : ''}${text.replace(/"/g, '""')}"`;
     }
 
     // ===================== Nombres de archivo =====================
@@ -135,4 +111,8 @@ class DataExporter {
         const pad = number => String(number).padStart(2, '0');
         return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { DataExporter };
 }

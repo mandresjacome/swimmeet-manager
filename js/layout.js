@@ -1,3 +1,4 @@
+/* exported Layout */
 /**
  * Layout compartido: inyecta cabecera, navegación y pie en todas las páginas.
  * Cada página incluye <header id="app-header">, <main class="app-main"> y <footer id="app-footer">
@@ -27,6 +28,35 @@ const Layout = {
         document.title = `${pageTitle} · ${config.name}`;
         this.renderHeader(activeKey, config);
         this.renderFooter(config);
+        this.renderStorageWarning(activeKey);
+    },
+
+    renderStorageWarning(activeKey) {
+        const main = document.querySelector('main');
+        const previous = document.getElementById('storageNotice');
+        const problems = db.getStorageProblems();
+        const recovery = problems.length > 0;
+        if (activeKey === 'ajustes') {
+            main.querySelectorAll('#evento, #plantillas, #demo, [data-action="clear-data"], [data-action="clear-results"]')
+                .forEach(element => { element.inert = recovery; });
+        } else {
+            main.inert = recovery;
+        }
+        if (!recovery) {
+            previous?.remove();
+            return;
+        }
+        const notice = previous || document.createElement('aside');
+        notice.id = 'storageNotice';
+        notice.className = 'alert warning storage-notice';
+        notice.setAttribute('role', 'alert');
+        notice.innerHTML = html`
+            <strong>El almacenamiento necesita recuperación</strong>
+            <p>${problems[0]}. Los valores almacenados se conservan y la edición está pausada.</p>
+            <p class="mb-0">${activeKey === 'ajustes'
+                ? 'Exporta una copia de recuperación antes de importar un respaldo completo o restablecer la aplicación.'
+                : html`Abre <a href="ajustes.html#respaldo">Ajustes</a> para exportar una copia de recuperación.`}</p>`;
+        if (!previous) main.before(notice);
     },
 
     renderHeader(activeKey, config) {
@@ -68,3 +98,14 @@ const Layout = {
         `;
     }
 };
+
+window.addEventListener('storage', debounce(() => {
+    const link = document.querySelector('.nav [aria-current="page"]');
+    const page = Layout.NAV.find(item => item.href === link?.getAttribute('href'));
+    if (!page) return;
+    if (document.getElementById('storageNotice') && !db.getStorageProblems().length) {
+        window.location.reload();
+        return;
+    }
+    Layout.renderStorageWarning(page.key);
+}, 150));

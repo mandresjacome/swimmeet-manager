@@ -323,3 +323,171 @@ test('clearAllData borra todo; con keepConfig conserva el evento', () => {
     db.clearAllData();
     assert.notEqual(db.getEventConfig().name, 'Copa Demo');
 });
+
+test('los contadores sobreviven al borrar el mayor ID y reabrir el navegador', () => {
+    const { category, event, participant, entry } = seed();
+    db.deleteCategory(category.category_id);
+    db.deleteParticipant(participant.participant_id);
+    db = new SwimmingDatabase();
+
+    const newCategory = db.addCategory('Máster QA');
+    const newEvent = db.addEvent('100 m Espalda', newCategory.category_id);
+    const newParticipant = db.addParticipant('Nadadora Ficticia');
+    const newEntry = db.addEntry(newEvent.event_id, newParticipant.participant_id);
+    assert.deepEqual(
+        [newCategory.category_id, newEvent.event_id, newParticipant.participant_id, newEntry.entry_id],
+        ['C-002', 'E-002', 'P-002', 'EN-002']
+    );
+    assert.notEqual(newEntry.entry_id, entry.entry_id);
+    assert.notEqual(newEvent.event_id, event.event_id);
+});
+
+test('una copia antigua sin contadores y un restablecimiento conservan los máximos conocidos', () => {
+    store.set('participants', JSON.stringify([{ participant_id: 'P-009', name: 'Nadadora Ficticia' }]));
+    db.deleteParticipant('P-009');
+    const oldBackup = { version: 2, participants: [{ participant_id: 'P-001', name: 'Otra Ficticia' }] };
+    assert.equal(db.importData(oldBackup), true);
+    assert.equal(db.addParticipant('Tercera Ficticia').participant_id, 'P-010');
+    db.clearAllData();
+    assert.equal(db.addParticipant('Cuarta Ficticia').participant_id, 'P-011');
+});
+
+test('respalda los contadores y restablece el consecutivo en otro perfil', () => {
+    const first = db.addParticipant('Primera Ficticia');
+    db.deleteParticipant(first.participant_id);
+    const backup = db.exportData();
+    store.clear();
+    db = new SwimmingDatabase();
+    assert.equal(db.importData(backup), true);
+    assert.equal(db.addParticipant('Segunda Ficticia').participant_id, 'P-002');
+});
+
+test('rechaza respaldos parciales que crearían referencias huérfanas', () => {
+    const { entry } = seed();
+    db.saveResult(entry.entry_id, 30);
+    const before = new Map(store);
+    for (const key of ['categories', 'events', 'participants', 'entries']) {
+        assert.match(db.validateImportData({ [key]: [] }).errors.join(' '), /inexistente/);
+        assert.equal(db.importData({ [key]: [] }), false);
+        assert.deepEqual(store, before);
+    }
+    assert.equal(db.importData({ results: [] }), true);
+    assert.equal(db.getEntries().length, 1);
+});
+
+test('rechaza respaldos con inscripciones duplicadas o carriles compartidos', () => {
+    const { event, participant, entry } = seed();
+    const other = db.addParticipant('Otra Ficticia');
+    const duplicate = { ...entry, entry_id: 'EN-002', lane: 2, participant_id: participant.participant_id };
+    const collision = { ...entry, entry_id: 'EN-002', participant_id: other.participant_id, event_id: event.event_id };
+    assert.match(db.validateImportData({ entries: [entry, duplicate] }).errors.join(' '), /inscripciones duplicadas/);
+    assert.match(db.validateImportData({ entries: [entry, collision] }).errors.join(' '), /carril ocupado/);
+    assert.deepEqual(db.getEntries(), [entry]);
+});
+
+test('valida estados y tiempos de resultados importados', () => {
+    const { entry } = seed();
+    for (const fields of [
+        { status: 'OK', time_seconds: -3 }, { status: 'OK', time_seconds: 0.001 },
+        { status: 'OK' }, { status: 'DQ', time_seconds: 30 }, { time_seconds: 30 }
+    ]) {
+        assert.equal(db.importData({ results: [{ entry_id: entry.entry_id, ...fields }] }), false);
+    }
+    assert.equal(db.importData({ results: [{ entry_id: entry.entry_id, status: 'OK', time_seconds: 31.567 }] }), true);
+    assert.equal(db.getResultRows()[0].time, 31.57);
+    for (const invalid of [true, [], '0x1e', -3, Infinity]) assert.ok(db.saveResult(entry.entry_id, invalid).error);
+});
+
+test('valida series y carriles enteros en altas, cambios y respaldos', () => {
+    const { event, entry } = seed();
+    const person = db.addParticipant('Nadadora Ficticia');
+    for (const [heat, lane] of [[1.9, 2], ['2parcial', 2], [1, 2.8], [true, 2], [1, 0], [0, 2], [1, 7], [2 ** 53, 2]]) {
+        assert.ok(db.addEntry(event.event_id, person.participant_id, heat, lane).error);
+        assert.ok(db.assignLane(entry.entry_id, heat, lane).error);
+        assert.equal(db.importData({ entries: [{ ...entry, heat, lane }] }), false);
+    }
+    const pending = db.addEntry(event.event_id, person.participant_id);
+    assert.equal(db.autoAssignLanes(event.event_id, 9), 0);
+    assert.equal(db.getEntryById(pending.entry_id).lane, 0);
+    assert.equal(db.assignLane(pending.entry_id, '2', '3'), true);
+});
+
+test('solo acepta género F, M o sin especificar y clubes de texto', () => {
+    const { participant } = seed();
+    assert.ok(db.addParticipant('Nadadora Ficticia', '', 'X').error);
+    assert.ok(db.updateParticipant(participant.participant_id, participant.name, '', null).error);
+    assert.equal(db.importData({ participants: [{ ...participant, gender: 'x' }] }), false);
+    assert.equal(db.importData({ participants: [{ ...participant, club_or_team: {} }] }), false);
+    assert.equal(db.getParticipantById(participant.participant_id).gender, 'F');
+    assert.equal(db.addParticipant('Nadadora Ficticia').gender, '');
+});
+
+test('impide bajar el máximo de carriles hasta reasignar o liberar las plazas', () => {
+    const { entry } = seed();
+    db.assignLane(entry.entry_id, 1, 6);
+    assert.match(db.saveEventConfig({ lanes: 4 }).error, /Reasigna o libera/);
+    assert.equal(db.importData({ eventConfig: { lanes: 4 } }), false);
+    assert.equal(db.getEventConfig().lanes, 6);
+    assert.equal(db.getEntryById(entry.entry_id).lane, 6);
+    db.assignLane(entry.entry_id, 1, 4);
+    assert.equal(db.saveEventConfig({ lanes: 4 }).lanes, 4);
+});
+
+test('rechaza fechas, horas, versiones y contadores inválidos', () => {
+    assert.ok(db.saveEventConfig({ date: '2026-02-30' }).error);
+    assert.ok(db.saveEventConfig({ startTime: '24:00' }).error);
+    assert.ok(db.saveEventConfig({ schedule: [{ time: '12:75', label: 'QA' }] }).error);
+    assert.ok(db.validateImportData({ version: 999, categories: [] }).errors.length);
+    assert.ok(db.validateImportData({ idCounters: { P: -1 }, categories: [] }).errors.length);
+    assert.equal(db.saveEventConfig({ date: '2028-02-29', startTime: '23:59' }).date, '2028-02-29');
+});
+
+test('protege los datos locales dañados y permite recuperar desde una copia completa', () => {
+    seed();
+    const backup = db.exportData();
+    store.set('participants', '{JSON truncado');
+    const before = new Map(store);
+    const reopened = new SwimmingDatabase();
+    assert.deepEqual(reopened.getParticipants(), []);
+    assert.ok(reopened.getStorageProblems().length);
+    const recovery = reopened.exportData();
+    assert.equal(recovery.storageRecovery.raw.participants, '{JSON truncado');
+    assert.equal(recovery.storageRecovery.raw.entries, before.get('entries'));
+    assert.throws(() => reopened.addParticipant('Nadadora Ficticia'), /requiere recuperación/);
+    assert.equal(reopened.importData({ participants: backup.participants }), false);
+    assert.equal(reopened.importData(recovery), false);
+    assert.deepEqual(store, before);
+    assert.equal(reopened.importData(backup), true);
+    assert.deepEqual(reopened.getStorageProblems(), []);
+    assert.deepEqual(reopened.getParticipants(), backup.participants);
+});
+
+test('un restablecimiento explícito recupera estructuras locales inválidas', () => {
+    const { participant } = seed();
+    store.set('idCounters', 'null');
+    store.set('results', JSON.stringify([{ entry_id: 'EN-inexistente', status: 'OK', time_seconds: 30 }]));
+    assert.ok(db.getStorageProblems().length);
+    assert.equal(db.clearAllData(), true);
+    assert.deepEqual(db.getStorageProblems(), []);
+    assert.deepEqual(db.getResults(), []);
+    assert.notEqual(db.addParticipant('Nadadora Ficticia').participant_id, participant.participant_id);
+});
+
+test('informa cuando el navegador también impide revertir una restauración fallida', () => {
+    const { category, event } = seed();
+    const realSetItem = localStorage.setItem;
+    localStorage.setItem = (key, value) => {
+        if (key === 'events' || (key === 'categories' && value.includes('Infantil A'))) throw new Error('cuota');
+        realSetItem(key, value);
+    };
+    try {
+        assert.equal(db.importData({
+            categories: [{ ...category, category_id: 'C-002', category_name: 'QA' }],
+            events: [{ ...event, category_id: 'C-002' }]
+        }), false);
+        assert.match(db.lastImportError, /ni recuperar todo el estado anterior/);
+    } finally {
+        localStorage.setItem = realSetItem;
+    }
+    assert.ok(db.getStorageProblems().length);
+});
